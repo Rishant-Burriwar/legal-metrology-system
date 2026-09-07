@@ -4,7 +4,7 @@ from app.cv_pipeline.preprocessor import process_label_image
 from app.extraction.extractor import extract_compliance_fields
 from app.rule_engine.rules import evaluate_compliance
 from app.reports.pdf_generator import generate_inspection_pdf
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def test_extraction_rules_and_pdf():
@@ -53,7 +53,7 @@ def test_extraction_rules_and_pdf():
     # 3. Test PDF generation produces valid binary content
     pdf_bytes = generate_inspection_pdf(
         inspection_id=1,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(timezone.utc),
         product_name="NutriCrunch Cookies",
         brand="Suncrest Foods",
         overall_status="Compliant",

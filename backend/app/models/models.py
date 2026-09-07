@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, Text, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
 from app.db import Base
@@ -12,7 +12,7 @@ class User(Base):
     email = Column(String(120), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     role = Column(String(20), default="inspector", nullable=False)  # inspector, admin, viewer
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     inspections = relationship("Inspection", back_populates="inspector")
 
@@ -35,7 +35,7 @@ class Inspection(Base):
     extracted_data = Column(JSON, nullable=True)
     compliance_score = Column(Float, nullable=False, default=0.0)
     overall_status = Column(String(50), nullable=False, default="Pending")  # Compliant, Non-Compliant
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     inspector = relationship("User", back_populates="inspections")
     violations = relationship("Violation", back_populates="inspection", cascade="all, delete-orphan")

@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Add backend directory to sys.path
 sys.path.insert(0, os.path.dirname(__file__))
@@ -97,7 +97,7 @@ PKD: 06/2026""",
         ]
 
         for idx, item in enumerate(demo_products):
-            created_at = datetime.utcnow() - timedelta(days=item["days_ago"], hours=item["days_ago"] * 2)
+            created_at = datetime.now(timezone.utc) - timedelta(days=item["days_ago"], hours=item["days_ago"] * 2)
             fields = extract_compliance_fields(item["ocr"])
             score, status, validations = evaluate_compliance(fields, is_food_product=True)
             assigned_user_id = user_ids[idx % len(user_ids)]
