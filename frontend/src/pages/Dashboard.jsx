@@ -83,34 +83,192 @@ export default function Dashboard({ user, onSelectInspection, onNewInspection })
     passes: v.pass_count,
   })) || [];
 
+  const [viewerSearch, setViewerSearch] = useState("");
+  const [viewerStatusFilter, setViewerStatusFilter] = useState("all");
+
   const isViewer = user?.role === "viewer";
   const isAdmin = user?.role === "admin";
   const isInspector = user?.role === "inspector";
 
-  return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* Role-Specific Banner for Viewer */}
-      {isViewer && (
-        <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-200 flex items-start space-x-3 text-amber-900 shadow-sm">
-          <div className="p-2 bg-amber-100 rounded-xl text-amber-700 shrink-0 mt-0.5">
-            <Eye className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="font-bold text-sm text-amber-950">
-                Public Verification Portal (Read-Only Mode)
-              </span>
-              <span className="bg-amber-200/80 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase">
-                Certificate Registry
-              </span>
+  // Dedicated View for Public Viewer: Report Download Portal (NO Inspector Dashboard)
+  if (isViewer) {
+    const filteredReports = recentList.filter((insp) => {
+      const matchSearch =
+        insp.product_name?.toLowerCase().includes(viewerSearch.toLowerCase()) ||
+        insp.brand?.toLowerCase().includes(viewerSearch.toLowerCase()) ||
+        String(insp.id).includes(viewerSearch);
+      const matchStatus =
+        viewerStatusFilter === "all" || insp.overall_status === viewerStatusFilter;
+      return matchSearch && matchStatus;
+    });
+
+    const compliantCount = recentList.filter(i => i.overall_status === "Compliant").length;
+    const nonCompliantCount = recentList.filter(i => i.overall_status === "Non-Compliant").length;
+
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
+        {/* Public Header */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 bg-blue-600 rounded-xl text-white shadow-md shadow-blue-500/20">
+                  <FileText className="w-6 h-6" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+                    Legal Metrology Public Report Download Portal
+                  </h1>
+                  <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+                    Department of Consumer Affairs • Certified Packaged Commodity Inspection Registry
+                  </p>
+                </div>
+              </div>
             </div>
-            <p className="text-xs text-amber-800 mt-1 leading-relaxed">
-              You are logged in as a <strong>Public Viewer</strong>. You have full access to inspect statutory compliance histories, view Rule LM-01–LM-07 evaluations, and download verified PDF certificates. Creating new product inspections is restricted to enforcement officers.
-            </p>
+            <div className="flex items-center space-x-2">
+              <span className="text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 rounded-full">
+                Public Access • Download Reports
+              </span>
+              <button
+                onClick={() => fetchData()}
+                title="Refresh Reports"
+                className="p-2 border border-slate-200 rounded-xl bg-white text-slate-600 hover:bg-slate-50 transition shadow-sm"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-blue-600" : ""}`} />
+              </button>
+            </div>
           </div>
         </div>
-      )}
 
+        {/* Search & Filter Bar */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="relative w-full md:w-96">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+            <input
+              type="text"
+              value={viewerSearch}
+              onChange={(e) => setViewerSearch(e.target.value)}
+              placeholder="Search by product name, brand, or report #..."
+              className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+            />
+          </div>
+
+          <div className="flex items-center space-x-2 w-full md:w-auto">
+            <button
+              onClick={() => setViewerStatusFilter("all")}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                viewerStatusFilter === "all"
+                  ? "bg-slate-900 text-white shadow-sm"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              All Reports ({recentList.length})
+            </button>
+            <button
+              onClick={() => setViewerStatusFilter("Compliant")}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                viewerStatusFilter === "Compliant"
+                  ? "bg-emerald-600 text-white shadow-sm"
+                  : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+              }`}
+            >
+              Compliant ({compliantCount})
+            </button>
+            <button
+              onClick={() => setViewerStatusFilter("Non-Compliant")}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+                viewerStatusFilter === "Non-Compliant"
+                  ? "bg-rose-600 text-white shadow-sm"
+                  : "bg-rose-50 text-rose-700 hover:bg-rose-100"
+              }`}
+            >
+              Violations ({nonCompliantCount})
+            </button>
+          </div>
+        </div>
+
+        {/* Report List with Prominent Download Buttons */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-slate-200 bg-slate-50/50 flex items-center justify-between">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+              Verified Commodity Inspection Reports ({filteredReports.length})
+            </h2>
+            <span className="text-[11px] text-slate-400 font-medium">
+              Click Download PDF to obtain certified compliance report
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-xs">
+              <thead className="bg-slate-50 text-slate-600 uppercase font-semibold">
+                <tr>
+                  <th className="py-3 px-4 text-left">Report #</th>
+                  <th className="py-3 px-4 text-left">Product Name</th>
+                  <th className="py-3 px-4 text-left">Brand</th>
+                  <th className="py-3 px-4 text-left">Compliance Status</th>
+                  <th className="py-3 px-4 text-left">Verification Date</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {filteredReports.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="py-12 text-center text-slate-400">
+                      No inspection reports match your search criteria.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredReports.map((insp) => (
+                    <tr key={insp.id} className="hover:bg-blue-50/30 transition">
+                      <td className="py-3.5 px-4 font-mono font-bold text-slate-700">
+                        #{String(insp.id).padStart(4, "0")}
+                      </td>
+                      <td className="py-3.5 px-4 font-semibold text-slate-900 text-sm">
+                        {insp.product_name}
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-600 font-medium">
+                        {insp.brand}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <StatusBadge status={insp.overall_status} size="sm" />
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-500">
+                        {new Date(insp.created_at).toLocaleDateString(undefined, {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </td>
+                      <td className="py-3.5 px-4 text-right space-x-2">
+                        <button
+                          onClick={() => onSelectInspection(insp.id)}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-xs transition"
+                        >
+                          View Details
+                        </button>
+                        <a
+                          href={inspectionApi.getPdfUrl(insp.id)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs shadow-sm shadow-blue-500/20 transition"
+                        >
+                          <Download className="w-3.5 h-3.5 mr-1" />
+                          Download PDF
+                        </a>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       {/* Header & Role Context */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
@@ -118,7 +276,6 @@ export default function Dashboard({ user, onSelectInspection, onNewInspection })
             <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
               {isAdmin && "Admin Command Center • Legal Metrology Directorate"}
               {isInspector && `Inspector Workspace • ${user?.name || "Officer"}`}
-              {isViewer && "Legal Metrology Compliance Overview"}
             </h1>
             {isAdmin && (
               <span className="bg-purple-100 text-purple-800 border border-purple-200 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
@@ -134,7 +291,6 @@ export default function Dashboard({ user, onSelectInspection, onNewInspection })
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
             {isAdmin && "Department-wide enforcement analytics, inspector team performance & product audit execution"}
             {isInspector && "Track your assigned packaged commodity audits, compliance rates, and statutory rule records"}
-            {isViewer && "Real-time compliance analytics under Legal Metrology (Packaged Commodities) Rules, 2011"}
           </p>
         </div>
 
