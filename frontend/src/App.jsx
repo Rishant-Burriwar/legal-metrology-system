@@ -24,6 +24,15 @@ export default function App() {
         localStorage.removeItem("lm_token");
       }
     }
+
+    const handleForceLogout = () => {
+      setUser(null);
+      setCurrentInspection(null);
+      setActiveTab("dashboard");
+    };
+
+    window.addEventListener("lm:logout", handleForceLogout);
+    return () => window.removeEventListener("lm:logout", handleForceLogout);
   }, []);
 
   const handleLoginSuccess = (userData) => {
