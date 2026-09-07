@@ -1,5 +1,5 @@
 import React from "react";
-import { Scale, LogOut, PlusCircle, LayoutDashboard, History, User } from "lucide-react";
+import { Scale, LogOut, PlusCircle, LayoutDashboard, History, User, FileText } from "lucide-react";
 
 export default function Navbar({ activeTab, setActiveTab, user, onLogout }) {
   return (
