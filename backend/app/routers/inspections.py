@@ -16,6 +16,7 @@ from app.ocr.ocr_service import perform_adaptive_ocr_pipeline
 from app.extraction.extractor import extract_compliance_fields, merge_multi_image_fields
 from app.rule_engine.rules import evaluate_compliance
 from app.reports.pdf_generator import generate_inspection_pdf
+from app.services.gemini_service import get_gemini_service
 
 logger = logging.getLogger(__name__)
 
@@ -47,43 +48,65 @@ async def _read_upload(upload: UploadFile) -> bytes:
 
 @router.post("/upload", response_model=InspectionResponse)
 async def upload_and_inspect(
-    images: List[UploadFile] = File(..., description="1–5 label photos of the same product"),
+    images: Optional[List[UploadFile]] = File(None, description="1–5 label photos of the same product"),
+    image: Optional[UploadFile] = File(None, description="Single label photo (backward compatibility)"),
     product_name: str = Form("Packaged Commodity"),
     brand: str = Form("Generic Brand"),
     is_food_product: bool = Form(True),
+    ai_engine: str = Form("gemini", description="Vision engine: 'gemini' | 'hybrid' | 'local'"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
-    Full multi-image inspection pipeline:
+    Full multi-image inspection pipeline with Gemini Multimodal AI:
 
     Accepts up to 5 photos of the same product label (different faces/angles).
     For each acceptable image:
       1. Pre-OCR Quality Gate (blur, brightness, resolution, contrast)
-      2. OpenCV Preprocessing — 8 variants (A–H)
-      3. YOLO/CRAFT region-aware + adaptive multi-variant OCR
-      4. Compliance field extraction
-    Final step: merge fields across all images, run Rule Engine, persist audit trail.
+      2. Gemini Multimodal Visual Packaging Analysis (surface, glare, curvature, legibility)
+      3. OpenCV Preprocessing — 8 variants (A–H) & contour cropping
+      4. Text & Statutory Field Extraction (Gemini AI, Hybrid Consensus, or Local OCR)
+      5. Rule Engine evaluation against Legal Metrology Rules, 2011 (LM-01..LM-07)
+    Final step: merge fields across all images, persist audit trail and return report.
     """
-    if not images:
+    # Normalize images list from either 'images' or legacy 'image'
+    upload_list: List[UploadFile] = []
+    if images:
+        upload_list.extend(images)
+    elif image:
+        upload_list.append(image)
+
+    if not upload_list:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="At least one image is required.",
         )
 
-    if len(images) > MAX_IMAGES:
+    if len(upload_list) > MAX_IMAGES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Maximum {MAX_IMAGES} images allowed per inspection.",
         )
 
     # Validate content types upfront
-    for img in images:
+    for img in upload_list:
         if not (img.content_type or "").startswith("image/"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"File '{img.filename}' is not a valid image (PNG, JPEG, etc.).",
             )
+
+    gemini_svc = get_gemini_service()
+    use_gemini = (ai_engine.lower() in ("gemini", "hybrid")) and gemini_svc.is_configured
+    ai_engine_label = (
+        "Gemini Multimodal Vision AI"
+        if ai_engine.lower() == "gemini" and use_gemini
+        else (
+            "Hybrid AI Consensus (Gemini + EasyOCR)"
+            if ai_engine.lower() == "hybrid" and use_gemini
+            else "Local OpenCV + EasyOCR"
+        )
+    )
 
     # -----------------------------------------------------------------------
     # Phase 1 — Quality Gate for all images
@@ -92,7 +115,7 @@ async def upload_and_inspect(
     quality_results: List[dict] = []
     accepted_indices: List[int] = []
 
-    for idx, upload in enumerate(images):
+    for idx, upload in enumerate(upload_list):
         img_bytes = await _read_upload(upload)
         if len(img_bytes) == 0:
             logger.warning(f"Image #{idx + 1} is empty — skipping.")
@@ -116,14 +139,13 @@ async def upload_and_inspect(
 
     # If NO image passed quality gate, return a rich rejection error
     if not accepted_indices:
-        # Use the quality result from the first image for the rejection detail
         first_qr = quality_results[0] if quality_results else {}
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={
                 "code": "IMAGE_QUALITY_VALIDATION_FAILED",
                 "message": (
-                    f"None of the {len(images)} uploaded image(s) passed the pre-OCR quality gate. "
+                    f"None of the {len(upload_list)} uploaded image(s) passed the pre-OCR quality gate. "
                     "Please retake the photos with better lighting and focus."
                 ),
                 "rejection_reasons": first_qr.get("rejection_reasons", []),
@@ -136,10 +158,22 @@ async def upload_and_inspect(
     best_quality_score = max(
         quality_results[i]["quality_score"] for i in accepted_indices
     )
-    best_quality_result = max(
-        (quality_results[i] for i in accepted_indices),
-        key=lambda q: q["quality_score"],
+    best_quality_result = dict(
+        max(
+            (quality_results[i] for i in accepted_indices),
+            key=lambda q: q["quality_score"],
+        )
     )
+
+    # Run Gemini Multimodal packaging visual analysis if enabled
+    if use_gemini and accepted_indices:
+        try:
+            primary_img_bytes = image_bytes_list[accepted_indices[0]]
+            gemini_vis = gemini_svc.analyze_packaging_image(primary_img_bytes)
+            best_quality_result["gemini_analysis"] = gemini_vis
+            logger.info(f"Gemini visual analysis complete: {gemini_vis.get('packaging_type')}, legibility={gemini_vis.get('legibility_score')}")
+        except Exception as e:
+            logger.warning(f"Gemini visual analysis failed: {e}")
 
     # -----------------------------------------------------------------------
     # Phase 2 — Create inspection record (accepted at least one image)
@@ -160,7 +194,7 @@ async def upload_and_inspect(
 
     try:
         # -----------------------------------------------------------------------
-        # Phase 3 — Per-image: preprocess → OCR → extract fields
+        # Phase 3 — Per-image: preprocess → OCR/Gemini → extract fields
         # -----------------------------------------------------------------------
         all_extracted: List[dict] = []
         all_ocr_confidences: List[float] = []
@@ -174,7 +208,7 @@ async def upload_and_inspect(
                 continue
 
             logger.info(
-                f"Inspection #{inspection.id}: Processing image {list_idx + 1}/{len(image_bytes_list)}"
+                f"Inspection #{inspection.id}: Processing image {list_idx + 1}/{len(image_bytes_list)} (Engine: {ai_engine_label})"
             )
 
             # 3a. OpenCV preprocessing — returns 8 variants
@@ -189,28 +223,56 @@ async def upload_and_inspect(
                 first_orig_url = f"/storage/images/{orig_fn}"
                 first_crop_url = f"/storage/images/{crop_fn}"
 
-            # Decode cropped BGR for YOLO region detection
+            # Decode cropped BGR for YOLO region detection or local fallback
             crop_bgr_path = os.path.join(STORAGE_DIR, crop_fn)
             cropped_bgr = cv2.imread(crop_bgr_path) if os.path.exists(crop_bgr_path) else None
 
-            # 3b. Adaptive OCR pipeline (region-aware + 8 variants)
-            ocr_result = perform_adaptive_ocr_pipeline(
-                variants=variants,
-                cropped_bgr=cropped_bgr,
-            )
-            raw_ocr_text = ocr_result["raw_ocr_text"]
-            validated_ocr_text = ocr_result["validated_ocr_text"]
-            ocr_confidence = ocr_result["ocr_confidence"]
+            # 3b. Extraction according to selected AI Engine
+            if ai_engine.lower() == "gemini" and use_gemini:
+                logger.info(f"Running Gemini Multimodal Vision extraction for image #{list_idx + 1}...")
+                g_res = gemini_svc.extract_statutory_fields(img_bytes, is_food_product=is_food_product)
+                if g_res.get("success"):
+                    raw_ocr_text = g_res.get("verbatim_text", "")
+                    validated_ocr_text = raw_ocr_text
+                    ocr_confidence = g_res.get("confidence", 0.95)
+                    extracted = g_res.get("fields", {})
+                else:
+                    logger.warning("Gemini extraction failed, falling back to local adaptive OCR.")
+                    ocr_result = perform_adaptive_ocr_pipeline(variants=variants, cropped_bgr=cropped_bgr)
+                    raw_ocr_text = ocr_result["raw_ocr_text"]
+                    validated_ocr_text = ocr_result["validated_ocr_text"]
+                    ocr_confidence = ocr_result["ocr_confidence"]
+                    extracted = extract_compliance_fields(raw_ocr_text, validated_ocr_text)
+
+            elif ai_engine.lower() == "hybrid" and use_gemini:
+                logger.info(f"Running Hybrid Consensus (Gemini + EasyOCR) for image #{list_idx + 1}...")
+                ocr_result = perform_adaptive_ocr_pipeline(variants=variants, cropped_bgr=cropped_bgr)
+                local_extracted = extract_compliance_fields(ocr_result["raw_ocr_text"], ocr_result["validated_ocr_text"])
+
+                g_res = gemini_svc.extract_statutory_fields(img_bytes, is_food_product=is_food_product)
+                g_fields = g_res.get("fields", {}) if g_res.get("success") else {}
+                g_text = g_res.get("verbatim_text", "")
+
+                extracted = gemini_svc.hybrid_consensus_merge(
+                    gemini_fields=g_fields,
+                    local_ocr_fields=local_extracted,
+                    gemini_conf=g_res.get("confidence", 0.95),
+                    local_conf=ocr_result["ocr_confidence"],
+                )
+                raw_ocr_text = f"=== GEMINI VISION TRANSCRIPT ===\n{g_text}\n\n=== LOCAL OCR TRANSCRIPT ===\n{ocr_result['raw_ocr_text']}"
+                validated_ocr_text = raw_ocr_text
+                ocr_confidence = max(g_res.get("confidence", 0.95), ocr_result["ocr_confidence"])
+
+            else:
+                # Local offline pipeline (OpenCV + EasyOCR + Tesseract)
+                ocr_result = perform_adaptive_ocr_pipeline(variants=variants, cropped_bgr=cropped_bgr)
+                raw_ocr_text = ocr_result["raw_ocr_text"]
+                validated_ocr_text = ocr_result["validated_ocr_text"]
+                ocr_confidence = ocr_result["ocr_confidence"]
+                extracted = extract_compliance_fields(raw_ocr_text, validated_ocr_text)
 
             logger.info(
-                f"  Image {list_idx + 1}: conf={ocr_confidence:.3f}, "
-                f"passes={ocr_result['passes_executed']}, text_len={len(raw_ocr_text)}"
-            )
-
-            # 3c. Field extraction
-            extracted = extract_compliance_fields(
-                raw_ocr_text=raw_ocr_text,
-                validated_ocr_text=validated_ocr_text,
+                f"  Image {list_idx + 1}: conf={ocr_confidence:.3f}, text_len={len(raw_ocr_text)}"
             )
 
             all_extracted.append(extracted)
@@ -218,7 +280,7 @@ async def upload_and_inspect(
             all_raw_texts.append(raw_ocr_text)
 
         if not all_extracted:
-            raise ValueError("No images could be processed through the OCR pipeline.")
+            raise ValueError("No images could be processed through the inspection pipeline.")
 
         # -----------------------------------------------------------------------
         # Phase 4 — Merge fields across all images
@@ -227,6 +289,10 @@ async def upload_and_inspect(
             all_extracted=all_extracted,
             all_ocr_confidences=all_ocr_confidences,
         )
+
+        merged_extracted["_ai_engine"] = ai_engine_label
+        if "gemini_analysis" in best_quality_result:
+            merged_extracted["_gemini_analysis"] = best_quality_result["gemini_analysis"]
 
         # Combine all raw OCR text for audit trail (separated by image marker)
         combined_raw_text = "\n\n--- IMAGE BOUNDARY ---\n\n".join(all_raw_texts)
@@ -274,7 +340,7 @@ async def upload_and_inspect(
 
         logger.info(
             f"Inspection #{inspection.id} complete — "
-            f"images_accepted={len(accepted_indices)}/{len(images)}, "
+            f"images_accepted={len(accepted_indices)}/{len(upload_list)}, "
             f"score={score:.1f}, status={overall_status}"
         )
         return inspection

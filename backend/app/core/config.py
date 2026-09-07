@@ -1,5 +1,9 @@
 import os
 from dataclasses import dataclass
+from dotenv import load_dotenv
+
+# Load environment variables from .env file if present
+load_dotenv()
 
 
 @dataclass(frozen=True)
@@ -22,6 +26,14 @@ class PipelineSettings:
 
     # Compliance Scoring
     COMPLIANCE_THRESHOLD: float = float(os.getenv("LM_COMPLIANCE_THRESHOLD", "80.0"))
+
+    # Gemini AI Vision & Extraction Settings (Loaded from environment variables)
+    GCP_API_KEY: str = os.getenv("GCP_API_KEY") or os.getenv("GEMINI_API_KEY", "")
+    GEMINI_API_KEY: str = os.getenv("GCP_API_KEY") or os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+    GEMINI_FALLBACK_MODEL: str = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash")
+    GEMINI_TIMEOUT: float = float(os.getenv("LM_GEMINI_TIMEOUT", "30.0"))
+    GEMINI_ENABLED: bool = os.getenv("LM_GEMINI_ENABLED", "true").lower() in ("true", "1", "yes")
 
 
 settings = PipelineSettings()

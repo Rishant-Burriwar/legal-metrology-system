@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from "react";
-import { FlaskConical, Upload, Loader2, ZoomIn, ZoomOut, Eye, ChevronDown, ChevronUp, BarChart3, Layers, ImageIcon, AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
+import { FlaskConical, Upload, Loader2, ZoomIn, ZoomOut, Eye, ChevronDown, ChevronUp, BarChart3, Layers, ImageIcon, AlertTriangle, CheckCircle2, XCircle, Sparkles, Bot } from "lucide-react";
 import { API_BASE_URL } from "../api/client";
 
 export default function ImageLab() {
@@ -226,6 +226,7 @@ export default function ImageLab() {
               {[
                 { key: "stages", label: "Pipeline Stages", icon: Layers },
                 { key: "variants", label: "OCR Variants", icon: Eye },
+                { key: "gemini", label: "Gemini Vision Audit", icon: Sparkles },
               ].map(({ key, label, icon: Icon }) => (
                 <button
                   key={key}
@@ -395,6 +396,110 @@ export default function ImageLab() {
                         </div>
                       </div>
                     </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Gemini Vision Audit */}
+            {activeSection === "gemini" && (
+              <div className="space-y-4">
+                {result.gemini_analysis ? (
+                  <div className="bg-slate-800/40 border border-slate-700/60 rounded-2xl p-6 backdrop-blur-sm space-y-6">
+                    {/* Header Banner */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-700/80 pb-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="p-2.5 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl shadow-lg shadow-blue-500/20 text-white">
+                          <Sparkles className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h2 className="text-base font-bold text-white">
+                            Gemini AI Multimodal Packaging Audit
+                          </h2>
+                          <p className="text-xs text-slate-400">
+                            Surface condition, material analysis, and OpenCV variant recommendation
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className="text-xs font-bold px-3 py-1 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-full">
+                          Legibility Score: {result.gemini_analysis.legibility_score ?? 95}/100
+                        </span>
+                        <span className="text-xs font-bold px-3 py-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-full capitalize">
+                          {result.gemini_analysis.visual_clarity || "Good"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Metric Cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="p-3.5 bg-slate-900/50 rounded-xl border border-slate-700/60">
+                        <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Packaging Type</div>
+                        <div className="text-xs font-bold text-white mt-1 capitalize truncate">
+                          {result.gemini_analysis.packaging_type || "Packaged Commodity"}
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 bg-slate-900/50 rounded-xl border border-slate-700/60">
+                        <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Surface Glare</div>
+                        <div className="text-xs font-bold text-white mt-1 truncate">
+                          {result.gemini_analysis.glare_detected ? `Detected (${result.gemini_analysis.glare_severity || 'Mild'})` : "None (Balanced)"}
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 bg-slate-900/50 rounded-xl border border-slate-700/60">
+                        <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Curvature</div>
+                        <div className="text-xs font-bold text-white mt-1 truncate">
+                          {result.gemini_analysis.surface_curvature || "Flat"}
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 bg-slate-900/50 rounded-xl border border-slate-700/60">
+                        <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Recommended Variant</div>
+                        <div className="text-xs font-bold text-blue-400 mt-1 truncate">
+                          {result.gemini_analysis.recommended_opencv_variant || "Variant A"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Visual Observations */}
+                    {result.gemini_analysis.visual_observations?.length > 0 && (
+                      <div className="p-4 bg-slate-900/60 rounded-xl border border-slate-700/50 space-y-2">
+                        <div className="text-xs font-bold uppercase text-slate-300 tracking-wider flex items-center space-x-1.5">
+                          <Bot className="w-4 h-4 text-blue-400" />
+                          <span>Gemini Visual Observations</span>
+                        </div>
+                        <ul className="space-y-1.5 text-xs text-slate-300">
+                          {result.gemini_analysis.visual_observations.map((obs, i) => (
+                            <li key={i} className="flex items-start space-x-2">
+                              <span className="text-blue-400 font-bold">•</span>
+                              <span>{obs}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Inspector Actionable Tips */}
+                    {result.gemini_analysis.inspector_recommendations?.length > 0 && (
+                      <div className="p-4 bg-blue-950/40 border border-blue-800/40 rounded-xl space-y-1">
+                        <div className="text-xs font-bold text-blue-300 uppercase tracking-wider">
+                          Inspector Best Practice Tip
+                        </div>
+                        <p className="text-xs text-blue-200/90 leading-relaxed">
+                          {result.gemini_analysis.inspector_recommendations.join(" ")}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="p-8 bg-slate-800/40 border border-slate-700/60 rounded-2xl text-center space-y-3">
+                    <p className="text-sm text-slate-300">
+                      Gemini Visual Analysis was not automatically generated for this sample.
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Verify that GEMINI_API_KEY is configured in backend settings.
+                    </p>
                   </div>
                 )}
               </div>

@@ -121,8 +121,8 @@ def generate_inspection_pdf(
         [
             Paragraph("<b>Image Quality Score:</b>", cell_style),
             Paragraph(f"{quality_score:.1f} / 100", cell_style),
-            Paragraph("<b>OCR Confidence / Retries:</b>", cell_style),
-            Paragraph(f"{int(ocr_confidence * 100)}% ({ocr_retry_count} retries)", cell_style),
+            Paragraph("<b>Inspection AI Engine:</b>", cell_style),
+            Paragraph(str(extracted_data.get("_ai_engine", "Gemini Multimodal Vision AI")), cell_bold),
         ],
     ]
 

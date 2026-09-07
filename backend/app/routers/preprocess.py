@@ -190,8 +190,19 @@ async def analyze_preprocessing(
             "dimensions": f"{img.shape[1]}×{img.shape[0]}",
         }
 
+    # Gemini AI packaging visual analysis if configured
+    gemini_analysis = None
+    try:
+        from app.services.gemini_service import get_gemini_service
+        g_svc = get_gemini_service()
+        if g_svc.is_configured:
+            gemini_analysis = g_svc.analyze_packaging_image(image_bytes)
+    except Exception as e:
+        logger.warning(f"ImageLab Gemini analysis skipped: {e}")
+
     return JSONResponse(content={
         "quality_assessment": quality_result,
+        "gemini_analysis": gemini_analysis,
         "stages": stages,
         "variants": variant_results,
         "pipeline_summary": {
@@ -202,3 +213,52 @@ async def analyze_preprocessing(
             "quality_score": quality_result["quality_score"],
         },
     })
+
+
+@router.post("/gemini-analyze")
+async def analyze_with_gemini(
+    image: UploadFile = File(...),
+    is_food_product: bool = True,
+):
+    """
+    Dedicated Gemini Multimodal AI packaging diagnosis & extraction endpoint for ImageLab.
+    Returns visual packaging quality audit, surface reflections/glare, and statutory extractions.
+    """
+    if not image.content_type or not image.content_type.startswith("image/"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded file must be a valid image.",
+        )
+
+    image_bytes = await image.read()
+    if not image_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty image received.",
+        )
+
+    from app.services.gemini_service import get_gemini_service
+    g_svc = get_gemini_service()
+
+    if not g_svc.is_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Gemini AI is not configured or API key is missing.",
+        )
+
+    try:
+        visual_analysis = g_svc.analyze_packaging_image(image_bytes)
+        extraction = g_svc.extract_statutory_fields(image_bytes, is_food_product=is_food_product)
+
+        return {
+            "visual_analysis": visual_analysis,
+            "extraction": extraction,
+            "engine": "Gemini Multimodal AI",
+        }
+    except Exception as e:
+        logger.error(f"Gemini analyze endpoint failure: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Gemini visual analysis failed: {str(e)}",
+        )
+

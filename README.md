@@ -10,9 +10,10 @@ A full-stack, automated computer vision and compliance auditing platform built f
 1. **Computer Vision Preprocessing & Contour Cropping (OpenCV)**:
    - Automated grayscale conversion, Non-Local Means Denoising (`fastNlMeansDenoising`), minAreaRect text deskewing, and CLAHE contrast enhancement.
    - Largest rectangular contour detection to isolate and crop the label packaging area.
-2. **Hybrid OCR Engine**:
-   - Primary EasyOCR pipeline with lazy singleton model initialization.
-   - Automatic confidence scoring and fallback to pytesseract for low-contrast or ambiguous text.
+2. **Hybrid OCR & Gemini AI Vision Engine**:
+   - **Google Gemini Multimodal AI**: State-of-the-art vision model for packaging surface diagnostics (foil/curvature/glare detection, legibility score) and direct statutory field parsing (Rules LM-01..LM-07).
+   - **Hybrid AI Consensus**: Parallel cross-validation combining Gemini Multimodal Vision with local OpenCV and EasyOCR.
+   - **Local Offline Engine**: EasyOCR pipeline with lazy singleton model initialization and pytesseract fallback.
 3. **Regulatory Rule Engine (Rules, 2011)**:
    - **LM-01**: Manufacturer / Packer / Importer Name & Address (Rule 6(1)(a)) [Major]
    - **LM-02**: Net Quantity Declaration in standard metric units (Rule 6(1)(b) & Rule 12) [Major]
@@ -29,7 +30,7 @@ A full-stack, automated computer vision and compliance auditing platform built f
    - Pre-bundled sample test labels (Fully Compliant Biscuit, Non-Compliant Chocolate Bar with missing taxes clause, and Partial Herbal Soap) for immediate live testing without needing physical packaging.
    - Pre-seeded realistic demo database records for instant dashboard visual presentation.
 6. **Statutory PDF Report Generation (ReportLab)**:
-   - One-click export of official Directorate of Legal Metrology compliance reports with metadata, visual pass/fail badges, violations table, extracted fields, and digital sign-off blocks.
+   - One-click export of official Directorate of Legal Metrology compliance reports with metadata, visual pass/fail badges, violations table, extracted fields, AI engine verification badge, and digital sign-off blocks.
 
 ---
 
@@ -39,9 +40,10 @@ A full-stack, automated computer vision and compliance auditing platform built f
 |---|---|
 | **Frontend** | React 19, Tailwind CSS, Recharts, Lucide Icons, Axios, Vite |
 | **Backend** | FastAPI, Python 3.13, Pydantic v2 |
+| **AI & Multimodal Vision** | Google Gemini 3.5 Flash / Flash Lite Vision API |
 | **Authentication** | JWT (JSON Web Tokens) with direct bcrypt hashing & role-based access |
 | **Computer Vision** | OpenCV (`opencv-python`), NumPy, Pillow |
-| **OCR** | EasyOCR (primary), PyTorch, pytesseract (fallback) |
+| **OCR** | Gemini Multimodal Vision, EasyOCR, PyTorch, pytesseract |
 | **Rule Engine** | Custom Python statutory engine (Rules, 2011 checklist) |
 | **Database** | SQLite (development) / PostgreSQL (production via SQLAlchemy) |
 | **Report Generation**| ReportLab PDF Engine |

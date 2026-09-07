@@ -106,8 +106,8 @@ def process_image(image_path: str):
     print(f"  Overall Status: {overall_status}")
     print()
     for v in validations:
-        icon = "✓" if v["status"] == "Pass" else "✗"
-        print(f"  [{icon}] {v['rule_code']}: {v['description'][:80]}")
+        icon = "[PASS]" if v["status"] == "Pass" else "[FAIL]"
+        print(f"  {icon} {v['rule_code']}: {v['description'][:80]}")
 
     print(f"\n{'='*70}")
     print(f"  RESULT: {overall_status} ({score}%)")

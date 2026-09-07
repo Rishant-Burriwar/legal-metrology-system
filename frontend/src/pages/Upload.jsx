@@ -18,6 +18,9 @@ import {
   Calendar,
   BadgeCheck,
   DollarSign,
+  Bot,
+  Cpu,
+  Zap,
 } from "lucide-react";
 import { inspectionApi, API_BASE_URL } from "../api/client";
 
@@ -53,6 +56,7 @@ export default function Upload({ onInspectionComplete }) {
   const [productName, setProductName]   = useState("");
   const [brand, setBrand]               = useState("");
   const [isFoodProduct, setIsFoodProduct] = useState(true);
+  const [aiEngine, setAiEngine]         = useState("gemini"); // "gemini" | "hybrid" | "local"
   const [loading, setLoading]           = useState(false);
   const [progress, setProgress]         = useState(0);
   const [pipelineStage, setPipelineStage] = useState("");
@@ -157,17 +161,28 @@ export default function Upload({ onInspectionComplete }) {
     setError(null);
     setQualityDiagnostic(null);
 
-    // Animated pipeline progress
-    const stages = [
+    // Animated pipeline progress based on selected engine
+    const stages = aiEngine === "gemini" ? [
+      { pct: 15, label: "Stage 1/4: Ingesting packaging label photos..." },
+      { pct: 35, label: "Stage 2/4: Gemini Multimodal Visual Quality & Surface Audit..." },
+      { pct: 70, label: "Stage 3/4: Gemini AI Statutory Field Extraction (Rules 2011)..." },
+      { pct: 92, label: "Stage 4/4: Legal Metrology Rule Compliance Scoring..." },
+    ] : aiEngine === "hybrid" ? [
+      { pct: 12, label: "Stage 1/5: Ingesting packaging photos..." },
+      { pct: 30, label: "Stage 2/5: Dual Quality Gate & Gemini Visual Audit..." },
+      { pct: 55, label: "Stage 3/5: OpenCV Preprocessing & Multi-Variant Local OCR..." },
+      { pct: 75, label: "Stage 4/5: Gemini AI Extraction & Cross-Engine Consensus Fusion..." },
+      { pct: 92, label: "Stage 5/5: Legal Metrology Rule Evaluation (Rules 2011)..." },
+    ] : [
       { pct: 12, label: "Stage 1/5: Uploading label photos..." },
       { pct: 32, label: "Stage 2/5: Pre-OCR Quality Gate (blur, sharpness, exposure)..." },
       { pct: 54, label: "Stage 3/5: OpenCV + YOLO Text Region Detection & Preprocessing..." },
       { pct: 75, label: "Stage 4/5: Adaptive Multi-Variant OCR + Field Merge across images..." },
       { pct: 92, label: "Stage 5/5: Legal Metrology Rule Engine (Rules, 2011)..." },
     ];
-    const delays = [0, 600, 1600, 3000, 5000];
+    const delays = [0, 500, 1400, 2600, 4200];
     const timers = stages.map((s, i) =>
-      setTimeout(() => { setProgress(s.pct); setPipelineStage(s.label); }, delays[i])
+      setTimeout(() => { setProgress(s.pct); setPipelineStage(s.label); }, delays[i] || 1000 * i)
     );
 
     try {
@@ -176,6 +191,7 @@ export default function Upload({ onInspectionComplete }) {
       formData.append("product_name", productName.trim() || "Packaged Product");
       formData.append("brand",        brand.trim()        || "Unbranded");
       formData.append("is_food_product", isFoodProduct ? "true" : "false");
+      formData.append("ai_engine", aiEngine);
 
       const result = await inspectionApi.upload(formData);
 
@@ -545,6 +561,85 @@ export default function Upload({ onInspectionComplete }) {
           </div>
         </div>
 
+        {/* Vision AI Engine Selection */}
+        <div className="p-4 bg-gradient-to-r from-blue-50/70 via-indigo-50/50 to-purple-50/70 rounded-2xl border border-blue-200/80 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Sparkles className="w-4 h-4 text-blue-600 animate-pulse" />
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                Inspection Vision AI Engine
+              </span>
+            </div>
+            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
+              Google Gemini Powered
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            {[
+              {
+                id: "gemini",
+                title: "Gemini Multimodal AI",
+                desc: "High-accuracy vision on foil, curved labels & small print (FSSAI/MRP)",
+                badge: "Recommended",
+                icon: Bot,
+                badgeColor: "bg-blue-600 text-white",
+                activeBorder: "border-blue-600 bg-white ring-2 ring-blue-500/20",
+              },
+              {
+                id: "hybrid",
+                title: "Hybrid Consensus",
+                desc: "Parallel cross-validation: Gemini AI + OpenCV EasyOCR ensemble",
+                badge: "Statutory Rigor",
+                icon: Zap,
+                badgeColor: "bg-purple-600 text-white",
+                activeBorder: "border-purple-600 bg-white ring-2 ring-purple-500/20",
+              },
+              {
+                id: "local",
+                title: "Local Offline OCR",
+                desc: "On-device OpenCV + EasyOCR + Tesseract pipeline",
+                badge: "100% Offline",
+                icon: Cpu,
+                badgeColor: "bg-slate-700 text-white",
+                activeBorder: "border-slate-800 bg-white ring-2 ring-slate-500/20",
+              },
+            ].map((eng) => {
+              const Icon = eng.icon;
+              const isSelected = aiEngine === eng.id;
+              return (
+                <button
+                  key={eng.id}
+                  type="button"
+                  onClick={() => setAiEngine(eng.id)}
+                  className={`p-3 rounded-xl border text-left transition relative flex flex-col justify-between ${
+                    isSelected
+                      ? `${eng.activeBorder} shadow-sm`
+                      : "border-slate-200/90 bg-white/70 hover:bg-white hover:border-slate-300"
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className={`p-1.5 rounded-lg ${isSelected ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-500"}`}>
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <span className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full ${eng.badgeColor}`}>
+                        {eng.badge}
+                      </span>
+                    </div>
+                    <p className={`text-xs font-bold ${isSelected ? "text-slate-900" : "text-slate-700"}`}>
+                      {eng.title}
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                      {eng.desc}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Food toggle */}
         <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-200">
           <div>
@@ -577,8 +672,13 @@ export default function Upload({ onInspectionComplete }) {
                 style={{ width: `${progress}%` }}
               />
             </div>
-            <div className="grid grid-cols-5 gap-1 pt-1">
-              {PIPELINE_STAGES.map((step, idx) => {
+            <div className="grid grid-cols-4 sm:grid-cols-5 gap-1 pt-1">
+              {(aiEngine === "gemini"
+                ? ["Upload", "Quality Gate", "Gemini Vision", "AI Extraction", "Rule Engine"]
+                : aiEngine === "hybrid"
+                ? ["Upload", "Dual Quality", "OpenCV OCR", "Gemini AI", "Consensus"]
+                : PIPELINE_STAGES
+              ).map((step, idx) => {
                 const active = progress >= (idx + 1) * 18;
                 return (
                   <div key={step} className="text-center">

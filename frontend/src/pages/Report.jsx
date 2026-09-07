@@ -56,6 +56,8 @@ export default function Report({ inspection, onBack, onNewInspection }) {
   const isCompliant = inspection.overall_status === "Compliant";
   const violations = inspection.violations || [];
   const extData = inspection.extracted_data || {};
+  const geminiAnalysis = inspection.quality_assessment?.gemini_analysis || extData._gemini_analysis;
+  const aiEngineUsed = extData._ai_engine || (geminiAnalysis ? "Gemini Multimodal Vision AI" : "Local OpenCV + EasyOCR");
 
   const passedCount = violations.filter((v) => v.status === "Pass").length;
   const failedCount = violations.filter((v) => v.status === "Fail").length;
@@ -122,9 +124,13 @@ export default function Report({ inspection, onBack, onNewInspection }) {
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           {/* Left Metadata */}
           <div className="space-y-3 flex-1">
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-mono font-bold text-slate-400">INSPECTION #{inspection.id}</span>
               <StatusBadge status={inspection.overall_status} type="verdict" size="lg" />
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                <Sparkles className="w-3 h-3 mr-1 text-blue-600" />
+                {aiEngineUsed}
+              </span>
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
@@ -223,6 +229,80 @@ export default function Report({ inspection, onBack, onNewInspection }) {
           </div>
         </div>
       </div>
+
+      {/* Gemini AI Multimodal Packaging Visual Analysis Card */}
+      {geminiAnalysis && (
+        <div className="bg-gradient-to-r from-blue-50/80 via-indigo-50/50 to-purple-50/70 rounded-2xl border border-blue-200/80 p-5 shadow-sm space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-200/60 pb-3">
+            <div className="flex items-center space-x-2.5">
+              <div className="p-2 bg-blue-600 text-white rounded-xl shadow-sm shadow-blue-500/30">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">
+                  Gemini AI Multimodal Packaging & Surface Analysis
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Computer Vision audit of label substrate, surface glare, curvature, and legibility
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-white text-blue-800 border border-blue-200 shadow-2xs">
+                Legibility: {geminiAnalysis.legibility_score ?? 95}/100 ({geminiAnalysis.visual_clarity || "Good"})
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3 bg-white/90 rounded-xl border border-blue-100 shadow-2xs">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Packaging Type</p>
+              <p className="text-xs font-bold text-slate-800 mt-0.5 capitalize truncate">
+                {geminiAnalysis.packaging_type || "Packaged Commodity"}
+              </p>
+            </div>
+            <div className="p-3 bg-white/90 rounded-xl border border-blue-100 shadow-2xs">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Surface Glare</p>
+              <p className="text-xs font-bold text-slate-800 mt-0.5 truncate">
+                {geminiAnalysis.glare_detected ? `Detected (${geminiAnalysis.glare_severity || 'Mild'})` : "None (Balanced)"}
+              </p>
+            </div>
+            <div className="p-3 bg-white/90 rounded-xl border border-blue-100 shadow-2xs">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Surface Curvature</p>
+              <p className="text-xs font-bold text-slate-800 mt-0.5 truncate">
+                {geminiAnalysis.surface_curvature || "Flat"}
+              </p>
+            </div>
+            <div className="p-3 bg-white/90 rounded-xl border border-blue-100 shadow-2xs">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Best CV Variant</p>
+              <p className="text-xs font-bold text-blue-700 mt-0.5 truncate">
+                {geminiAnalysis.recommended_opencv_variant || "Variant A (Balanced)"}
+              </p>
+            </div>
+          </div>
+
+          {geminiAnalysis.visual_observations?.length > 0 && (
+            <div className="p-3.5 bg-white/85 rounded-xl border border-blue-100/80 space-y-1.5">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600">Visual Observations</p>
+              <ul className="space-y-1">
+                {geminiAnalysis.visual_observations.map((obs, i) => (
+                  <li key={i} className="text-xs text-slate-700 flex items-start">
+                    <span className="text-blue-500 mr-2 font-bold">•</span>
+                    <span>{obs}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {geminiAnalysis.inspector_recommendations?.length > 0 && (
+            <div className="p-3 bg-blue-50/80 rounded-xl border border-blue-100 flex items-start space-x-2 text-xs text-blue-900">
+              <span className="font-bold shrink-0 text-blue-700">Inspector Tip:</span>
+              <span>{geminiAnalysis.inspector_recommendations.join(" ")}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Side-by-Side Images (Original vs OpenCV Cropped) */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">

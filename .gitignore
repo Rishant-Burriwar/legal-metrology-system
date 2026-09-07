@@ -1,0 +1,34 @@
+# Environment & Secrets
+.env
+.env.*
+*.env
+!*.env.example
+!*.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local databases & storage
+*.db
+*.sqlite3
+backend/legal_metrology.db
+backend/storage/images/*
+!backend/storage/images/.gitkeep
+
+# Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
