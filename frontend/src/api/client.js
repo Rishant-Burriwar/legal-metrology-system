@@ -58,18 +58,29 @@ export const inspectionApi = {
     const res = await api.get(`/inspections/${id}`);
     return res.data;
   },
-  list: async (skip = 0, limit = 20, status = null) => {
+  list: async (skip = 0, limit = 20, status = null, inspectorId = null) => {
     const params = { skip, limit };
     if (status) params.status = status;
+    if (inspectorId !== null && inspectorId !== undefined && inspectorId !== "all") {
+      params.inspector_id = inspectorId;
+    }
     const res = await api.get("/inspections", { params });
+    return res.data;
+  },
+  getInspectors: async () => {
+    const res = await api.get("/inspections/inspectors");
     return res.data;
   },
   getPdfUrl: (id) => `${API_BASE_URL}/inspections/${id}/report.pdf`,
 };
 
 export const dashboardApi = {
-  getStats: async () => {
-    const res = await api.get("/dashboard/stats");
+  getStats: async (inspectorId = null) => {
+    const params = {};
+    if (inspectorId !== null && inspectorId !== undefined && inspectorId !== "all") {
+      params.inspector_id = inspectorId;
+    }
+    const res = await api.get("/dashboard/stats", { params });
     return res.data;
   },
 };

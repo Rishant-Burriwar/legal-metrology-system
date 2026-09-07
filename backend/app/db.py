@@ -70,6 +70,12 @@ def seed_database():
                     role="inspector",
                 ),
                 User(
+                    name="Inspector Priya Patel",
+                    email="inspector2@gov.in",
+                    hashed_password=get_password_hash("inspector123"),
+                    role="inspector",
+                ),
+                User(
                     name="Admin Controller",
                     email="admin@gov.in",
                     hashed_password=get_password_hash("admin123"),
@@ -84,6 +90,19 @@ def seed_database():
             ]
             db.add_all(default_users)
             db.commit()
+        else:
+            # Ensure Inspector Priya Patel exists for multi-inspector testing
+            p_patel = db.query(User).filter(User.email == "inspector2@gov.in").first()
+            if not p_patel:
+                db.add(
+                    User(
+                        name="Inspector Priya Patel",
+                        email="inspector2@gov.in",
+                        hashed_password=get_password_hash("inspector123"),
+                        role="inspector",
+                    )
+                )
+                db.commit()
 
         # Seed mandatory Legal Metrology (Packaged Commodities) Rules, 2011
         existing_rules = db.query(Rule).count()

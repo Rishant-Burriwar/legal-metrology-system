@@ -125,27 +125,38 @@ export default function Login({ onLoginSuccess }) {
             <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider text-center mb-3">
               1-Click Demo Evaluation Accounts
             </p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => handleQuickLogin("inspector@gov.in", "inspector123")}
-                className="py-1.5 px-2 text-xs bg-slate-100 hover:bg-blue-50 hover:text-blue-700 rounded-lg border border-slate-200 font-medium text-slate-700 transition"
+                className="py-2 px-2 text-left bg-slate-50 hover:bg-blue-50 hover:border-blue-300 rounded-xl border border-slate-200 transition group"
               >
-                Inspector
+                <div className="text-[11px] font-bold text-slate-800 group-hover:text-blue-700">Inspector Sharma</div>
+                <div className="text-[10px] text-slate-400 font-mono">Personal Dashboard</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleQuickLogin("inspector2@gov.in", "inspector123")}
+                className="py-2 px-2 text-left bg-slate-50 hover:bg-blue-50 hover:border-blue-300 rounded-xl border border-slate-200 transition group"
+              >
+                <div className="text-[11px] font-bold text-slate-800 group-hover:text-blue-700">Inspector Priya</div>
+                <div className="text-[10px] text-slate-400 font-mono">2nd Field Officer</div>
               </button>
               <button
                 type="button"
                 onClick={() => handleQuickLogin("admin@gov.in", "admin123")}
-                className="py-1.5 px-2 text-xs bg-slate-100 hover:bg-blue-50 hover:text-blue-700 rounded-lg border border-slate-200 font-medium text-slate-700 transition"
+                className="py-2 px-2 text-left bg-slate-50 hover:bg-purple-50 hover:border-purple-300 rounded-xl border border-slate-200 transition group"
               >
-                Admin
+                <div className="text-[11px] font-bold text-slate-800 group-hover:text-purple-700">Admin Controller</div>
+                <div className="text-[10px] text-slate-400 font-mono">Team Monitor + Audits</div>
               </button>
               <button
                 type="button"
                 onClick={() => handleQuickLogin("viewer@gov.in", "viewer123")}
-                className="py-1.5 px-2 text-xs bg-slate-100 hover:bg-blue-50 hover:text-blue-700 rounded-lg border border-slate-200 font-medium text-slate-700 transition"
+                className="py-2 px-2 text-left bg-slate-50 hover:bg-amber-50 hover:border-amber-300 rounded-xl border border-slate-200 transition group"
               >
-                Viewer
+                <div className="text-[11px] font-bold text-slate-800 group-hover:text-amber-700">Public Viewer</div>
+                <div className="text-[10px] text-slate-400 font-mono">Read-Only + PDF</div>
               </button>
             </div>
           </div>

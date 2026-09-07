@@ -51,7 +51,27 @@ const PIPELINE_STAGES = [
   "Rule Engine",
 ];
 
-export default function Upload({ onInspectionComplete }) {
+export default function Upload({ user, onInspectionComplete, onCancel }) {
+  if (user?.role === "viewer") {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-16 text-center">
+        <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-md shadow-amber-500/10">
+          <ShieldAlert className="w-8 h-8" />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900">Access Restricted • Read-Only Mode</h2>
+        <p className="text-slate-500 text-sm mt-2 max-w-md mx-auto">
+          Public viewers are not authorized to conduct or upload product inspections under Legal Metrology Rules. You can browse verified compliance audit reports and download certificates.
+        </p>
+        <button
+          onClick={onCancel}
+          className="mt-6 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition shadow-md shadow-blue-500/20 cursor-pointer"
+        >
+          Return to Dashboard
+        </button>
+      </div>
+    );
+  }
+
   const [files, setFiles]               = useState([]); // [{file, preview, slotIdx}]
   const [productName, setProductName]   = useState("");
   const [brand, setBrand]               = useState("");

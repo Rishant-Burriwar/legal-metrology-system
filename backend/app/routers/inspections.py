@@ -8,7 +8,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models.models import Inspection, Violation, User
-from app.schemas.schemas import InspectionResponse, InspectionSummary
+from app.schemas.schemas import InspectionResponse, InspectionSummary, InspectorOption
 from app.auth.dependencies import get_current_user
 from app.cv_pipeline.quality_assessor import assess_image_quality
 from app.cv_pipeline.preprocessor import process_label_image
@@ -69,6 +69,13 @@ async def upload_and_inspect(
       5. Rule Engine evaluation against Legal Metrology Rules, 2011 (LM-01..LM-07)
     Final step: merge fields across all images, persist audit trail and return report.
     """
+    # RBAC check: Viewers cannot perform inspections
+    if current_user.role == "viewer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Viewers have read-only access and are not authorized to inspect products.",
+        )
+
     # Normalize images list from either 'images' or legacy 'image'
     upload_list: List[UploadFile] = []
     if images:
@@ -357,19 +364,39 @@ async def upload_and_inspect(
 
 
 # ---------------------------------------------------------------------------
-# List & detail endpoints (unchanged)
-# ---------------------------------------------------------------------------
+@router.get("/inspectors", response_model=List[InspectorOption])
+def get_inspectors_list(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List all inspectors and admins for filtering dropdowns."""
+    users = db.query(User).filter(User.role.in_(["inspector", "admin"])).all()
+    return [
+        InspectorOption(id=u.id, name=u.name, email=u.email, role=u.role)
+        for u in users
+    ]
+
 
 @router.get("", response_model=List[InspectionSummary])
 def list_inspections(
     skip: int = Query(0, ge=0),
     limit: int = Query(20, ge=1, le=100),
     status_filter: Optional[str] = Query(None, alias="status"),
+    inspector_id: Optional[int] = Query(None, description="Optional inspector ID filter for admin"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """List past inspections with pagination and optional status filter."""
+    """List past inspections with pagination, role-scoping, and optional status/inspector filters."""
     query = db.query(Inspection)
+
+    if current_user.role == "inspector":
+        # Inspector is strictly scoped to their own inspections
+        query = query.filter(Inspection.inspector_id == current_user.id)
+    elif current_user.role == "admin":
+        if inspector_id is not None:
+            query = query.filter(Inspection.inspector_id == inspector_id)
+    # Viewer sees all inspections across the organization
+
     if status_filter:
         query = query.filter(Inspection.overall_status == status_filter)
 

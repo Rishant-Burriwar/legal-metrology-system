@@ -22,7 +22,7 @@ import ScoreGauge from "../components/ScoreGauge";
 import StatusBadge from "../components/StatusBadge";
 import { inspectionApi, API_BASE_URL } from "../api/client";
 
-export default function Report({ inspection, onBack, onNewInspection }) {
+export default function Report({ user, inspection, onBack, onNewInspection }) {
   const [activeOcrTab, setActiveOcrTab] = useState("validated"); // "validated" | "raw"
   const [showRawOcr, setShowRawOcr] = useState(false);
   const [selectedImageModal, setSelectedImageModal] = useState(null);
@@ -68,15 +68,19 @@ export default function Report({ inspection, onBack, onNewInspection }) {
   const retries = inspection.ocr_retry_count ?? 0;
 
   const renderFieldValue = (field) => {
-    if (!field) return <span className="text-slate-400 font-normal italic">Not Detected</span>;
-    const isUncertain = field.status === "uncertain" || field.value?.includes("uncertain");
+    if (!field) return <span className="text-slate-400 font-normal italic">Not Found</span>;
+    if (typeof field === "string") return field;
 
-    if (isUncertain) {
+    if (field.status === "not_found") {
+      return <span className="text-rose-600 font-semibold italic">Missing Declaration</span>;
+    }
+
+    if (field.status === "low_confidence") {
       return (
         <div className="space-y-1">
-          <span className="inline-flex items-center px-2 py-0.5 rounded bg-orange-100 text-orange-800 font-mono text-xs font-semibold">
-            <AlertTriangle className="w-3 h-3 mr-1 text-orange-600 shrink-0" />
-            [uncertain — please upload a clearer image]
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200">
+            <AlertTriangle className="w-3 h-3 mr-1" />
+            Unverified (Confidence Below Minimum Threshold)
           </span>
           <p className="text-[11px] text-orange-700 font-medium">
             OCR confidence fell below verification threshold. Value withheld to prevent error.
@@ -87,6 +91,8 @@ export default function Report({ inspection, onBack, onNewInspection }) {
 
     return field.value || <span className="text-slate-400 font-normal italic">Not Detected</span>;
   };
+
+  const isViewer = user?.role === "viewer";
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
@@ -101,12 +107,14 @@ export default function Report({ inspection, onBack, onNewInspection }) {
         </button>
 
         <div className="flex items-center space-x-3">
-          <button
-            onClick={onNewInspection}
-            className="px-3.5 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition"
-          >
-            New Inspection
-          </button>
+          {!isViewer && (
+            <button
+              onClick={onNewInspection}
+              className="px-3.5 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition"
+            >
+              New Inspection
+            </button>
+          )}
           <a
             href={pdfDownloadUrl}
             target="_blank"

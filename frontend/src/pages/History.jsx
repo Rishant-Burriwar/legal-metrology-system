@@ -3,8 +3,10 @@ import { Search, Filter, Download, ArrowUpRight, ArrowLeft } from "lucide-react"
 import StatusBadge from "../components/StatusBadge";
 import { inspectionApi } from "../api/client";
 
-export default function History({ onSelectInspection, onBack }) {
+export default function History({ user, onSelectInspection, onBack }) {
   const [inspections, setInspections] = useState([]);
+  const [inspectorsList, setInspectorsList] = useState([]);
+  const [selectedInspectorId, setSelectedInspectorId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
@@ -13,8 +15,17 @@ export default function History({ onSelectInspection, onBack }) {
     setLoading(true);
     try {
       const filter = statusFilter === "all" ? null : statusFilter;
-      const data = await inspectionApi.list(0, 50, filter);
+      const data = await inspectionApi.list(0, 50, filter, selectedInspectorId);
       setInspections(data);
+
+      if (user?.role === "admin" && inspectorsList.length === 0) {
+        try {
+          const team = await inspectionApi.getInspectors();
+          setInspectorsList(team);
+        } catch (e) {
+          console.error("Failed to load inspectors list:", e);
+        }
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -24,7 +35,7 @@ export default function History({ onSelectInspection, onBack }) {
 
   useEffect(() => {
     fetchInspections();
-  }, [statusFilter]);
+  }, [statusFilter, selectedInspectorId]);
 
   const filtered = inspections.filter((insp) => {
     const matchSearch =
@@ -33,6 +44,10 @@ export default function History({ onSelectInspection, onBack }) {
       String(insp.id).includes(searchTerm);
     return matchSearch;
   });
+
+  const isAdmin = user?.role === "admin";
+  const isInspector = user?.role === "inspector";
+  const isViewer = user?.role === "viewer";
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
@@ -46,15 +61,40 @@ export default function History({ onSelectInspection, onBack }) {
             Back to Dashboard
           </button>
           <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-            Inspection History
+            {isInspector && `My Inspection History`}
+            {isAdmin && `Department Inspection Registry`}
+            {isViewer && `Public Compliance Audit Registry`}
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Audit trail of all verified packaged commodities
+            {isInspector && `All packaged commodity compliance audits conducted by ${user?.name}`}
+            {isAdmin && `Comprehensive department audit trail with inspector filtering`}
+            {isViewer && `Browse verified Legal Metrology reports and download compliance certificates`}
           </p>
         </div>
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3">
+          {/* Admin Inspector Filter */}
+          {isAdmin && (
+            <div className="flex items-center space-x-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 shadow-sm text-xs">
+              <span className="text-slate-500 font-medium">Inspector:</span>
+              <select
+                value={selectedInspectorId || "all"}
+                onChange={(e) => {
+                  const val = e.target.value === "all" ? null : Number(e.target.value);
+                  setSelectedInspectorId(val);
+                }}
+                className="bg-transparent font-semibold text-slate-800 outline-none cursor-pointer"
+              >
+                <option value="all">All Officers</option>
+                {inspectorsList.map((insp) => (
+                  <option key={insp.id} value={insp.id}>
+                    {insp.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input

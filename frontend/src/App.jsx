@@ -84,17 +84,23 @@ export default function App() {
 
         {!loadingInspection && activeTab === "dashboard" && (
           <Dashboard
+            user={user}
             onSelectInspection={handleSelectInspection}
             onNewInspection={() => setActiveTab("upload")}
           />
         )}
 
         {!loadingInspection && activeTab === "upload" && (
-          <Upload onInspectionComplete={handleInspectionComplete} />
+          <Upload
+            user={user}
+            onInspectionComplete={handleInspectionComplete}
+            onCancel={() => setActiveTab("dashboard")}
+          />
         )}
 
         {!loadingInspection && activeTab === "report" && (
           <Report
+            user={user}
             inspection={currentInspection}
             onBack={() => setActiveTab("dashboard")}
             onNewInspection={() => {
@@ -106,6 +112,7 @@ export default function App() {
 
         {!loadingInspection && activeTab === "history" && (
           <History
+            user={user}
             onSelectInspection={handleSelectInspection}
             onBack={() => setActiveTab("dashboard")}
           />

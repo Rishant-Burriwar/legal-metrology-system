@@ -17,8 +17,14 @@ def seed_demo_inspections():
 
     db = SessionLocal()
     try:
-        inspector = db.query(User).filter(User.role == "inspector").first()
-        inspector_id = inspector.id if inspector else 1
+        insp1 = db.query(User).filter(User.email == "inspector@gov.in").first()
+        insp2 = db.query(User).filter(User.email == "inspector2@gov.in").first()
+        admin_u = db.query(User).filter(User.email == "admin@gov.in").first()
+        user_ids = [
+            insp1.id if insp1 else 1,
+            insp2.id if insp2 else (insp1.id if insp1 else 1),
+            admin_u.id if admin_u else 1,
+        ]
 
         existing_count = db.query(Inspection).count()
         if existing_count >= 5:
@@ -90,13 +96,14 @@ PKD: 06/2026""",
             },
         ]
 
-        for item in demo_products:
+        for idx, item in enumerate(demo_products):
             created_at = datetime.utcnow() - timedelta(days=item["days_ago"], hours=item["days_ago"] * 2)
             fields = extract_compliance_fields(item["ocr"])
             score, status, validations = evaluate_compliance(fields, is_food_product=True)
+            assigned_user_id = user_ids[idx % len(user_ids)]
 
             insp = Inspection(
-                inspector_id=inspector_id,
+                inspector_id=assigned_user_id,
                 product_name=item["product"],
                 brand=item["brand"],
                 image_path=item["image"],

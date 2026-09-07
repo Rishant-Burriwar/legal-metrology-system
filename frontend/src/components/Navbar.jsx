@@ -36,17 +36,20 @@ export default function Navbar({ activeTab, setActiveTab, user, onLogout }) {
               <span>Dashboard</span>
             </button>
 
-            <button
-              onClick={() => setActiveTab("upload")}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition ${
-                activeTab === "upload"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-slate-300 hover:text-white hover:bg-slate-800"
-              }`}
-            >
-              <PlusCircle className="w-4 h-4" />
-              <span>New Inspection</span>
-            </button>
+            {/* New Inspection: Allowed for Inspector and Admin, Hidden for Viewer */}
+            {user?.role !== "viewer" && (
+              <button
+                onClick={() => setActiveTab("upload")}
+                className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition ${
+                  activeTab === "upload"
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "text-slate-300 hover:text-white hover:bg-slate-800"
+                }`}
+              >
+                <PlusCircle className="w-4 h-4" />
+                <span>New Inspection</span>
+              </button>
+            )}
 
             <button
               onClick={() => setActiveTab("history")}
@@ -67,9 +70,21 @@ export default function Navbar({ activeTab, setActiveTab, user, onLogout }) {
               <div className="hidden md:flex items-center space-x-2 border-l border-slate-700/80 pl-3">
                 <div className="text-right">
                   <div className="text-xs font-medium text-slate-200">{user.name}</div>
-                  <span className="text-[10px] text-blue-300 uppercase font-semibold tracking-wider">
-                    {user.role}
-                  </span>
+                  {user.role === "admin" && (
+                    <span className="inline-block text-[10px] bg-purple-500/20 text-purple-300 border border-purple-400/30 px-2 py-0.2 rounded uppercase font-bold tracking-wider">
+                      Admin Supervisor
+                    </span>
+                  )}
+                  {user.role === "inspector" && (
+                    <span className="inline-block text-[10px] bg-blue-500/20 text-blue-300 border border-blue-400/30 px-2 py-0.2 rounded uppercase font-bold tracking-wider">
+                      Inspector
+                    </span>
+                  )}
+                  {user.role === "viewer" && (
+                    <span className="inline-block text-[10px] bg-amber-500/20 text-amber-300 border border-amber-400/30 px-2 py-0.2 rounded uppercase font-bold tracking-wider">
+                      Viewer (Read-Only)
+                    </span>
+                  )}
                 </div>
               </div>
             )}

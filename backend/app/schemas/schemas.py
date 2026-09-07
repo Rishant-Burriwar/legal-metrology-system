@@ -101,6 +101,26 @@ class ViolationBreakdown(BaseModel):
     pass_count: int
 
 
+class InspectorProgressSummary(BaseModel):
+    id: int
+    name: str
+    email: str
+    role: str
+    total_inspections: int
+    compliant_count: int
+    non_compliant_count: int
+    compliance_rate: float
+    avg_score: float
+    last_inspection_at: Optional[datetime] = None
+
+
+class InspectorOption(BaseModel):
+    id: int
+    name: str
+    email: str
+    role: str
+
+
 class DashboardStats(BaseModel):
     total_inspections: int
     compliant_count: int
@@ -108,3 +128,7 @@ class DashboardStats(BaseModel):
     compliance_rate: float
     violations_by_type: List[ViolationBreakdown]
     recent_trend: List[Dict[str, Any]]
+    user_role: Optional[str] = None
+    inspector_name: Optional[str] = None
+    inspector_filter_id: Optional[int] = None
+    inspectors_progress: Optional[List[InspectorProgressSummary]] = None
