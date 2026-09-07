@@ -82,6 +82,20 @@ def create_sample_labels():
     img3.save(img3_path)
     print(f"Created: {img3_path}")
 
+    # 4. Blurry Label (Tests Pre-OCR Quality Gate Rejection)
+    from PIL import ImageFilter
+    img_blur = img1.copy().filter(ImageFilter.GaussianBlur(radius=5))
+    img_blur_path = os.path.join(sample_dir, "blurry_label.png")
+    img_blur.save(img_blur_path)
+    print(f"Created: {img_blur_path}")
+
+    # 5. Low-Resolution Label (Below 300x200 min dimensions)
+    img_lowres = img1.copy().resize((180, 130))
+    img_lowres_path = os.path.join(sample_dir, "low_res_label.png")
+    img_lowres.save(img_lowres_path)
+    print(f"Created: {img_lowres_path}")
+
 
 if __name__ == "__main__":
     create_sample_labels()
+

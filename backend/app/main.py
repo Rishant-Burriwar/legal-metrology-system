@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.db import engine, Base, seed_database
-from app.routers import auth_router, inspections_router, dashboard_router
+from app.routers import auth_router, inspections_router, dashboard_router, preprocess_router
 
 # Setup directories
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -20,6 +20,8 @@ os.makedirs(SAMPLE_DIR, exist_ok=True)
 async def lifespan(app: FastAPI):
     # Initialize database tables and seed mandatory rules & default users
     Base.metadata.create_all(bind=engine)
+    from app.db import run_migrations
+    run_migrations()
     seed_database()
     yield
 
@@ -48,6 +50,7 @@ app.mount("/sample_images", StaticFiles(directory=SAMPLE_DIR), name="sample_imag
 app.include_router(auth_router)
 app.include_router(inspections_router)
 app.include_router(dashboard_router)
+app.include_router(preprocess_router)
 
 
 @app.get("/")

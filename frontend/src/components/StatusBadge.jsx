@@ -59,6 +59,24 @@ export default function StatusBadge({ status, type = "status", size = "sm" }) {
     );
   }
 
+  if (norm === "uncertain") {
+    return (
+      <span className={`inline-flex items-center rounded-full bg-orange-50 text-orange-700 border border-orange-200 font-semibold ${sizeClasses}`}>
+        <AlertTriangle className="w-3 h-3 text-orange-600" />
+        Uncertain
+      </span>
+    );
+  }
+
+  if (norm === "rejected" || norm === "quality_failed") {
+    return (
+      <span className={`inline-flex items-center rounded-full bg-rose-100 text-rose-800 border border-rose-300 font-semibold ${sizeClasses}`}>
+        <XCircle className="w-3.5 h-3.5 text-rose-600" />
+        Pre-OCR Rejected
+      </span>
+    );
+  }
+
   if (norm === "not_found") {
     return (
       <span className={`inline-flex items-center rounded-full bg-slate-100 text-slate-600 border border-slate-200 ${sizeClasses}`}>

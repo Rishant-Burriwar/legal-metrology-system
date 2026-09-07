@@ -19,6 +19,9 @@ def generate_inspection_pdf(
     extracted_data: Dict[str, Any],
     inspector_name: str = "Senior Inspector Sharma",
     location: str = "New Delhi Central Verification Zone",
+    quality_score: float = 0.0,
+    ocr_confidence: float = 0.0,
+    ocr_retry_count: int = 0,
 ) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -114,6 +117,12 @@ def generate_inspection_pdf(
             Paragraph(status_html, cell_bold),
             Paragraph("<b>Rules Evaluated:</b>", cell_style),
             Paragraph(f"{len(violations)} Mandatory Declarations", cell_style),
+        ],
+        [
+            Paragraph("<b>Image Quality Score:</b>", cell_style),
+            Paragraph(f"{quality_score:.1f} / 100", cell_style),
+            Paragraph("<b>OCR Confidence / Retries:</b>", cell_style),
+            Paragraph(f"{int(ocr_confidence * 100)}% ({ocr_retry_count} retries)", cell_style),
         ],
     ]
 

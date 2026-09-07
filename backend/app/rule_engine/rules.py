@@ -1,10 +1,19 @@
 from typing import Dict, Any, List, Tuple
+from app.extraction.disambiguation import UNCERTAIN_TAG
 
 
 def check_manufacturer_details(data: Dict[str, Any]) -> Dict[str, str]:
     field = data.get("manufacturer_details", {})
     val = field.get("value")
     status = field.get("status")
+
+    if status == "uncertain" or val == UNCERTAIN_TAG:
+        return {
+            "rule_code": "LM-01",
+            "description": "Manufacturer details unreadable or uncertain [Rule 6(1)(a) — please upload a clearer image]",
+            "severity": "Major",
+            "status": "Fail",
+        }
 
     if status == "found" and val and len(val) >= 8:
         return {
@@ -33,6 +42,14 @@ def check_net_quantity(data: Dict[str, Any]) -> Dict[str, str]:
     val = field.get("value")
     status = field.get("status")
 
+    if status == "uncertain" or val == UNCERTAIN_TAG:
+        return {
+            "rule_code": "LM-02",
+            "description": "Net quantity unreadable or uncertain [Rule 6(1)(b) — please upload a clearer image]",
+            "severity": "Major",
+            "status": "Fail",
+        }
+
     if status == "found" and val:
         return {
             "rule_code": "LM-02",
@@ -53,6 +70,14 @@ def check_mrp(data: Dict[str, Any]) -> Dict[str, str]:
     val = field.get("value")
     status = field.get("status")
     taxes_included = field.get("taxes_included", False)
+
+    if status == "uncertain" or val == UNCERTAIN_TAG:
+        return {
+            "rule_code": "LM-03",
+            "description": "MRP price unreadable or uncertain [Rule 6(1)(e) — please upload a clearer image]",
+            "severity": "Major",
+            "status": "Fail",
+        }
 
     if status == "found" and taxes_included:
         return {
@@ -81,6 +106,14 @@ def check_manufacture_date(data: Dict[str, Any]) -> Dict[str, str]:
     val = field.get("value")
     status = field.get("status")
 
+    if status == "uncertain" or val == UNCERTAIN_TAG:
+        return {
+            "rule_code": "LM-04",
+            "description": "Manufacturing date unreadable or uncertain [Rule 6(1)(d) — please upload a clearer image]",
+            "severity": "Major",
+            "status": "Fail",
+        }
+
     if status in ("found", "low_confidence") and val:
         return {
             "rule_code": "LM-04",
@@ -98,8 +131,18 @@ def check_manufacture_date(data: Dict[str, Any]) -> Dict[str, str]:
 
 def check_customer_care(data: Dict[str, Any]) -> Dict[str, str]:
     field = data.get("customer_care", {})
+    val = field.get("value")
     phone = field.get("phone")
     email = field.get("email")
+    status = field.get("status")
+
+    if status == "uncertain" or val == UNCERTAIN_TAG:
+        return {
+            "rule_code": "LM-05",
+            "description": "Consumer care contact unreadable or uncertain [Rule 6(1)(n) — please upload a clearer image]",
+            "severity": "Minor",
+            "status": "Fail",
+        }
 
     if phone and email:
         return {
@@ -129,17 +172,26 @@ def check_fssai_license(data: Dict[str, Any], is_food_product: bool = True) -> D
     val = field.get("value")
     status = field.get("status")
 
+    if not is_food_product:
+        return {
+            "rule_code": "LM-06",
+            "description": "FSSAI license not applicable for non-food commodity category",
+            "severity": "Major",
+            "status": "Pass",
+        }
+
+    if status == "uncertain" or val == UNCERTAIN_TAG:
+        return {
+            "rule_code": "LM-06",
+            "description": "FSSAI License 14-digit number unreadable or corrupted [Please upload a clearer image]",
+            "severity": "Major",
+            "status": "Fail",
+        }
+
     if status == "found" and val and len(val) == 14:
         return {
             "rule_code": "LM-06",
             "description": f"Valid 14-digit FSSAI License Number declared: '{val}'",
-            "severity": "Major",
-            "status": "Pass",
-        }
-    elif not is_food_product:
-        return {
-            "rule_code": "LM-06",
-            "description": "FSSAI license not applicable for non-food commodity category",
             "severity": "Major",
             "status": "Pass",
         }
@@ -155,6 +207,14 @@ def check_country_of_origin(data: Dict[str, Any]) -> Dict[str, str]:
     field = data.get("country_of_origin", {})
     val = field.get("value")
     status = field.get("status")
+
+    if status == "uncertain" or val == UNCERTAIN_TAG:
+        return {
+            "rule_code": "LM-07",
+            "description": "Country of origin unreadable or uncertain [Please upload a clearer image]",
+            "severity": "Minor",
+            "status": "Fail",
+        }
 
     if status == "found" and val:
         return {

@@ -26,6 +26,33 @@ def get_db():
         db.close()
 
 
+def run_migrations():
+    """Ensure newly added columns exist in existing database tables."""
+    from sqlalchemy import text
+    try:
+        if DATABASE_URL.startswith("sqlite"):
+            with engine.begin() as conn:
+                cursor = conn.execute(text("PRAGMA table_info(inspections)"))
+                existing_cols = {row[1] for row in cursor.fetchall()}
+                if existing_cols:
+                    columns_to_add = [
+                        ("validated_ocr_text", "TEXT"),
+                        ("ocr_confidence", "FLOAT DEFAULT 0.0"),
+                        ("ocr_retry_count", "INTEGER DEFAULT 0"),
+                        ("quality_score", "FLOAT DEFAULT 0.0"),
+                        ("quality_assessment", "JSON"),
+                    ]
+                    for col_name, col_type in columns_to_add:
+                        if col_name not in existing_cols:
+                            conn.execute(text(f"ALTER TABLE inspections ADD COLUMN {col_name} {col_type}"))
+    except Exception:
+        pass
+
+
+# Run migrations immediately on initialization
+run_migrations()
+
+
 def seed_database():
     from app.models.models import Rule, User
     from app.auth.jwt import get_password_hash

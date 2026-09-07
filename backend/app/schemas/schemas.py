@@ -67,6 +67,11 @@ class InspectionResponse(BaseModel):
     image_path: str
     cropped_image_path: Optional[str] = None
     raw_ocr_text: Optional[str] = None
+    validated_ocr_text: Optional[str] = None
+    ocr_confidence: Optional[float] = 0.0
+    ocr_retry_count: Optional[int] = 0
+    quality_score: Optional[float] = 0.0
+    quality_assessment: Optional[Dict[str, Any]] = None
     extracted_data: Optional[Dict[str, Any]] = None
     compliance_score: float
     overall_status: str
@@ -80,6 +85,8 @@ class InspectionSummary(BaseModel):
     product_name: str
     brand: str
     compliance_score: float
+    quality_score: Optional[float] = 0.0
+    ocr_confidence: Optional[float] = 0.0
     overall_status: str
     created_at: datetime
     inspector_name: Optional[str] = None

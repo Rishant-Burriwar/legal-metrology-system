@@ -12,13 +12,18 @@ import {
   Building2, 
   PhoneCall, 
   ShieldCheck, 
-  Layers 
+  Layers,
+  Sparkles,
+  Gauge,
+  Activity,
+  Repeat
 } from "lucide-react";
 import ScoreGauge from "../components/ScoreGauge";
 import StatusBadge from "../components/StatusBadge";
 import { inspectionApi, API_BASE_URL } from "../api/client";
 
 export default function Report({ inspection, onBack, onNewInspection }) {
+  const [activeOcrTab, setActiveOcrTab] = useState("validated"); // "validated" | "raw"
   const [showRawOcr, setShowRawOcr] = useState(false);
   const [selectedImageModal, setSelectedImageModal] = useState(null);
 
@@ -36,9 +41,9 @@ export default function Report({ inspection, onBack, onNewInspection }) {
     );
   }
 
-  const origImageUrl = inspection.image_path.startsWith("http")
+  const origImageUrl = inspection.image_path?.startsWith("http")
     ? inspection.image_path
-    : `${API_BASE_URL}${inspection.image_path}`;
+    : `${API_BASE_URL}${inspection.image_path || ""}`;
 
   const croppedImageUrl = inspection.cropped_image_path
     ? (inspection.cropped_image_path.startsWith("http")
@@ -54,6 +59,32 @@ export default function Report({ inspection, onBack, onNewInspection }) {
 
   const passedCount = violations.filter((v) => v.status === "Pass").length;
   const failedCount = violations.filter((v) => v.status === "Fail").length;
+
+  const qualityMetrics = inspection.quality_assessment?.metrics || {};
+  const qualityScore = inspection.quality_score ?? 0.0;
+  const ocrConf = inspection.ocr_confidence ? Math.round(inspection.ocr_confidence * 100) : 0;
+  const retries = inspection.ocr_retry_count ?? 0;
+
+  const renderFieldValue = (field) => {
+    if (!field) return <span className="text-slate-400 font-normal italic">Not Detected</span>;
+    const isUncertain = field.status === "uncertain" || field.value?.includes("uncertain");
+
+    if (isUncertain) {
+      return (
+        <div className="space-y-1">
+          <span className="inline-flex items-center px-2 py-0.5 rounded bg-orange-100 text-orange-800 font-mono text-xs font-semibold">
+            <AlertTriangle className="w-3 h-3 mr-1 text-orange-600 shrink-0" />
+            [uncertain — please upload a clearer image]
+          </span>
+          <p className="text-[11px] text-orange-700 font-medium">
+            OCR confidence fell below verification threshold. Value withheld to prevent error.
+          </p>
+        </div>
+      );
+    }
+
+    return field.value || <span className="text-slate-400 font-normal italic">Not Detected</span>;
+  };
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
@@ -127,13 +158,79 @@ export default function Report({ inspection, onBack, onNewInspection }) {
         </div>
       </div>
 
+      {/* Image Quality & OCR Engine Diagnostic Banner */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Quality Score Card */}
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm flex items-start space-x-3">
+          <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl shrink-0">
+            <Gauge className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center space-x-1.5">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Quality Score</span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800">
+                {qualityScore >= 80 ? "Crisp" : qualityScore >= 60 ? "Good" : "Acceptable"}
+              </span>
+            </div>
+            <p className="text-xl font-black text-slate-900 mt-1">
+              {qualityScore.toFixed(1)} <span className="text-xs text-slate-400 font-semibold">/ 100</span>
+            </p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Laplacian Sharpness: {qualityMetrics.sharpness_laplacian ?? "N/A"}
+            </p>
+          </div>
+        </div>
+
+        {/* OCR Confidence Card */}
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm flex items-start space-x-3">
+          <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl shrink-0">
+            <Activity className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center space-x-1.5">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">OCR Confidence</span>
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${ocrConf >= 75 ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+                {ocrConf >= 75 ? "High" : "Moderate"}
+              </span>
+            </div>
+            <p className="text-xl font-black text-slate-900 mt-1">
+              {ocrConf}% <span className="text-xs text-slate-400 font-semibold">Avg Consensus</span>
+            </p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Disambiguated typography stream
+            </p>
+          </div>
+        </div>
+
+        {/* Retries / Passes Card */}
+        <div className="p-4 bg-white rounded-2xl border border-slate-200 shadow-sm flex items-start space-x-3">
+          <div className="p-2.5 bg-purple-50 text-purple-600 rounded-xl shrink-0">
+            <Repeat className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center space-x-1.5">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Multi-Pass Pipeline</span>
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-800">
+                {retries > 0 ? "Adaptive Retry" : "Single Pass"}
+              </span>
+            </div>
+            <p className="text-xl font-black text-slate-900 mt-1">
+              {retries === 0 ? "1 Pass" : `${retries + 1} Passes`}
+            </p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              {retries > 0 ? `${retries} retry stage(s) triggered` : "Target confidence met in Pass 1"}
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Side-by-Side Images (Original vs OpenCV Cropped) */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-2">
             <Layers className="w-4 h-4 text-blue-600" />
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-800">
-              Computer Vision Pipeline: Region Detection
+              Computer Vision Pipeline: Region Detection & Rectification
             </h2>
           </div>
           <span className="text-xs text-slate-400">Click any image to enlarge</span>
@@ -143,8 +240,10 @@ export default function Report({ inspection, onBack, onNewInspection }) {
           {/* Original */}
           <div className="border border-slate-200 rounded-xl p-3 bg-slate-50/50">
             <div className="flex items-center justify-between text-xs font-semibold text-slate-600 mb-2">
-              <span>Original Capture</span>
-              <span className="text-[10px] text-slate-400">Input Photo</span>
+              <span>Original Input Capture</span>
+              <span className="text-[10px] text-slate-400">
+                {qualityMetrics.width ? `${qualityMetrics.width}×${qualityMetrics.height} px` : "Input Photo"}
+              </span>
             </div>
             <div
               className="h-48 bg-white rounded-lg overflow-hidden border border-slate-200 flex items-center justify-center cursor-pointer group"
@@ -158,10 +257,10 @@ export default function Report({ inspection, onBack, onNewInspection }) {
             </div>
           </div>
 
-          {/* Cropped & Enhanced */}
+          {/* Cropped & Rectified */}
           <div className="border border-blue-200 rounded-xl p-3 bg-blue-50/20">
             <div className="flex items-center justify-between text-xs font-semibold text-blue-900 mb-2">
-              <span>OpenCV Cropped & Deskewed Label</span>
+              <span>OpenCV Cropped, Deskewed & Rectified Label</span>
               <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-bold">
                 Contour Detected
               </span>
@@ -233,13 +332,13 @@ export default function Report({ inspection, onBack, onNewInspection }) {
         </div>
       </div>
 
-      {/* Extracted Declarations Cards */}
+      {/* Extracted Declarations Cards with Disambiguation & Uncertainty Protection */}
       <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-2">
             <Tag className="w-4 h-4 text-blue-600" />
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-800">
-              Structured Field Extractions (NLP & Regex)
+              Structured Field Extractions (NLP, Disambiguation & Validation)
             </h2>
           </div>
         </div>
@@ -251,9 +350,9 @@ export default function Report({ inspection, onBack, onNewInspection }) {
               <span className="text-xs font-semibold text-slate-500">Net Quantity</span>
               <StatusBadge status={extData.net_quantity?.status || "not_found"} />
             </div>
-            <p className="text-sm font-bold text-slate-800 mt-1">
-              {extData.net_quantity?.value || "Not Detected"}
-            </p>
+            <div className="text-sm font-bold text-slate-800 mt-1">
+              {renderFieldValue(extData.net_quantity)}
+            </div>
           </div>
 
           {/* MRP */}
@@ -262,9 +361,9 @@ export default function Report({ inspection, onBack, onNewInspection }) {
               <span className="text-xs font-semibold text-slate-500">Maximum Retail Price (MRP)</span>
               <StatusBadge status={extData.mrp?.status || "not_found"} />
             </div>
-            <p className="text-sm font-bold text-slate-800 mt-1">
-              {extData.mrp?.value || "Not Detected"}
-            </p>
+            <div className="text-sm font-bold text-slate-800 mt-1">
+              {renderFieldValue(extData.mrp)}
+            </div>
           </div>
 
           {/* Mfg Date */}
@@ -273,9 +372,9 @@ export default function Report({ inspection, onBack, onNewInspection }) {
               <span className="text-xs font-semibold text-slate-500">Date of Mfg / Packing</span>
               <StatusBadge status={extData.manufacture_date?.status || "not_found"} />
             </div>
-            <p className="text-sm font-bold text-slate-800 mt-1">
-              {extData.manufacture_date?.value || "Not Detected"}
-            </p>
+            <div className="text-sm font-bold text-slate-800 mt-1">
+              {renderFieldValue(extData.manufacture_date)}
+            </div>
           </div>
 
           {/* Customer Care */}
@@ -284,9 +383,9 @@ export default function Report({ inspection, onBack, onNewInspection }) {
               <span className="text-xs font-semibold text-slate-500">Consumer Care Contact</span>
               <StatusBadge status={extData.customer_care?.status || "not_found"} />
             </div>
-            <p className="text-sm font-bold text-slate-800 mt-1">
-              {extData.customer_care?.value || "Not Detected"}
-            </p>
+            <div className="text-sm font-bold text-slate-800 mt-1">
+              {renderFieldValue(extData.customer_care)}
+            </div>
           </div>
 
           {/* FSSAI */}
@@ -295,9 +394,9 @@ export default function Report({ inspection, onBack, onNewInspection }) {
               <span className="text-xs font-semibold text-slate-500">FSSAI License Number</span>
               <StatusBadge status={extData.fssai_license?.status || "not_found"} />
             </div>
-            <p className="text-sm font-bold text-slate-800 mt-1 font-mono">
-              {extData.fssai_license?.value || "Not Detected"}
-            </p>
+            <div className="text-sm font-bold text-slate-800 mt-1 font-mono">
+              {renderFieldValue(extData.fssai_license)}
+            </div>
           </div>
 
           {/* Country of Origin */}
@@ -306,9 +405,9 @@ export default function Report({ inspection, onBack, onNewInspection }) {
               <span className="text-xs font-semibold text-slate-500">Country of Origin</span>
               <StatusBadge status={extData.country_of_origin?.status || "not_found"} />
             </div>
-            <p className="text-sm font-bold text-slate-800 mt-1">
-              {extData.country_of_origin?.value || "Not Detected"}
-            </p>
+            <div className="text-sm font-bold text-slate-800 mt-1">
+              {renderFieldValue(extData.country_of_origin)}
+            </div>
           </div>
 
           {/* Manufacturer Details */}
@@ -317,29 +416,68 @@ export default function Report({ inspection, onBack, onNewInspection }) {
               <span className="text-xs font-semibold text-slate-500">Manufacturer / Packer Name & Address</span>
               <StatusBadge status={extData.manufacturer_details?.status || "not_found"} />
             </div>
-            <p className="text-sm font-bold text-slate-800 mt-1">
-              {extData.manufacturer_details?.value || "Not Detected"}
-            </p>
+            <div className="text-sm font-bold text-slate-800 mt-1">
+              {renderFieldValue(extData.manufacturer_details)}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Collapsible Raw OCR Text Viewer */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
-        <button
-          onClick={() => setShowRawOcr(!showRawOcr)}
-          className="w-full flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-700"
-        >
+      {/* Tabbed OCR Typography Stream Viewer (Validated vs Raw) */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
           <div className="flex items-center space-x-2">
-            <FileText className="w-4 h-4 text-slate-500" />
-            <span>Raw OCR Typography Stream (EasyOCR / Tesseract)</span>
+            <FileText className="w-4 h-4 text-blue-600" />
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-800">
+              OCR Typography Stream
+            </h2>
           </div>
-          <span className="text-blue-600">{showRawOcr ? "Hide OCR Text ▲" : "View Raw OCR Text ▼"}</span>
-        </button>
+
+          {/* Tab Selection */}
+          <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveOcrTab("validated");
+                setShowRawOcr(true);
+              }}
+              className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
+                activeOcrTab === "validated" && showRawOcr
+                  ? "bg-white text-blue-700 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Validated & Disambiguated
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveOcrTab("raw");
+                setShowRawOcr(true);
+              }}
+              className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
+                activeOcrTab === "raw" && showRawOcr
+                  ? "bg-white text-blue-700 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Raw Engine Output
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowRawOcr(!showRawOcr)}
+              className="px-2.5 py-1 text-xs text-slate-500 hover:text-slate-800 font-medium"
+            >
+              {showRawOcr ? "Collapse ▲" : "Expand ▼"}
+            </button>
+          </div>
+        </div>
 
         {showRawOcr && (
-          <div className="mt-4 p-4 rounded-xl bg-slate-900 text-slate-200 font-mono text-xs whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
-            {inspection.raw_ocr_text || "No text extracted by OCR engine."}
+          <div className="p-4 rounded-xl bg-slate-900 text-slate-200 font-mono text-xs whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+            {activeOcrTab === "validated"
+              ? (inspection.validated_ocr_text || inspection.raw_ocr_text || "No text extracted by OCR engine.")
+              : (inspection.raw_ocr_text || "No raw text extracted by OCR engine.")}
           </div>
         )}
       </div>

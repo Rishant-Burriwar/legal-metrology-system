@@ -75,9 +75,13 @@ def test_cv_pipeline_with_sample_image():
         img_bytes = f.read()
 
     test_storage = os.path.join(os.path.dirname(__file__), "..", "storage", "images")
-    orig_file, crop_file, enhanced = process_label_image(img_bytes, test_storage, 999)
+    orig_file, crop_file, enhanced, variants = process_label_image(img_bytes, test_storage, 999)
 
     assert os.path.exists(os.path.join(test_storage, orig_file))
     assert os.path.exists(os.path.join(test_storage, crop_file))
     assert enhanced is not None
+    assert len(enhanced.shape) == 2  # Grayscale
+    assert "variant_a" in variants
+    assert "variant_b" in variants
+    assert "variant_c" in variants
     assert len(enhanced.shape) == 2  # Grayscale

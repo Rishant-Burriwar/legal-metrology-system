@@ -27,6 +27,11 @@ class Inspection(Base):
     image_path = Column(String(300), nullable=False)
     cropped_image_path = Column(String(300), nullable=True)
     raw_ocr_text = Column(Text, nullable=True)
+    validated_ocr_text = Column(Text, nullable=True)
+    ocr_confidence = Column(Float, nullable=True, default=0.0)
+    ocr_retry_count = Column(Integer, nullable=True, default=0)
+    quality_score = Column(Float, nullable=True, default=0.0)
+    quality_assessment = Column(JSON, nullable=True)
     extracted_data = Column(JSON, nullable=True)
     compliance_score = Column(Float, nullable=False, default=0.0)
     overall_status = Column(String(50), nullable=False, default="Pending")  # Compliant, Non-Compliant
