@@ -16,7 +16,8 @@ import {
   Filter,
   ShieldCheck,
   Calendar,
-  Check
+  Check,
+  Search
 } from "lucide-react";
 import { 
   ResponsiveContainer, 
