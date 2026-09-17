@@ -25,7 +25,6 @@ Class Definitions (YOLO label indices):
     3 — manufacturer     (manufacturer/marketer address block)
     4 — general_text     (other text regions)
 """
-
 import argparse
 import json
 import logging
@@ -37,6 +36,13 @@ from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
+
+# Ensure backend directory is in sys.path before importing app modules
+BACKEND_DIR = Path(__file__).parent.resolve()
+sys.path.insert(0, str(BACKEND_DIR))
+
+from app.db import SessionLocal
+from sqlalchemy import text
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -63,31 +69,28 @@ logger = logging.getLogger(__name__)
 # Database helpers
 # ---------------------------------------------------------------------------
 
-def load_inspections_from_db(db_path: Path) -> List[Dict]:
-    """Load inspection records that have extracted_data and stored images."""
+def load_inspections_from_db(db_path: Path = None) -> List[Dict]:
+    """Load inspection records that have extracted_data and stored images using SQLAlchemy."""
     try:
-        import sqlite3
-        conn = sqlite3.connect(str(db_path))
-        conn.row_factory = sqlite3.Row
-        cur = conn.cursor()
-        cur.execute(
-            """
+        db = SessionLocal()
+        query = text("""
             SELECT id, image_path, cropped_image_path, extracted_data, ocr_blocks
             FROM inspections
             WHERE extracted_data IS NOT NULL
               AND (cropped_image_path IS NOT NULL OR image_path IS NOT NULL)
             ORDER BY id DESC
             LIMIT 2000
-            """
-        )
-        rows = [dict(r) for r in cur.fetchall()]
-        conn.close()
+        """)
+        result = db.execute(query)
+        # Handle SQLAlchemy row mapping format
+        rows = [dict(r._mapping) if hasattr(r, '_mapping') else dict(r) for r in result]
+        db.close()
+        
         logger.info(f"Loaded {len(rows)} inspection records from DB.")
         return rows
     except Exception as e:
         logger.error(f"Failed to load DB: {e}")
         return []
-
 
 # ---------------------------------------------------------------------------
 # Annotation generation

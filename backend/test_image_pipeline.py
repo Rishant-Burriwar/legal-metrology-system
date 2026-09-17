@@ -6,6 +6,7 @@ import sys
 import os
 import cv2
 import json
+import numpy as np
 
 # Add backend to path
 sys.path.insert(0, os.path.dirname(__file__))
@@ -31,7 +32,7 @@ def process_image(image_path: str):
         image_bytes = f.read()
 
     original_bgr = cv2.imdecode(
-        __import__("numpy").frombuffer(image_bytes, __import__("numpy").uint8),
+        np.frombuffer(image_bytes, np.uint8),
         cv2.IMREAD_COLOR
     )
 

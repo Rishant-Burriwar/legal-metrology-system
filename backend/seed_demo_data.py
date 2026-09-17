@@ -97,37 +97,41 @@ PKD: 06/2026""",
         ]
 
         for idx, item in enumerate(demo_products):
-            created_at = datetime.now(timezone.utc) - timedelta(days=item["days_ago"], hours=item["days_ago"] * 2)
-            fields = extract_compliance_fields(item["ocr"])
-            score, status, validations = evaluate_compliance(fields, is_food_product=True)
-            assigned_user_id = user_ids[idx % len(user_ids)]
+            try:
+                created_at = datetime.now(timezone.utc) - timedelta(days=item["days_ago"], hours=item["days_ago"] * 2)
+                fields = extract_compliance_fields(item["ocr"])
+                score, status, validations = evaluate_compliance(fields, is_food_product=True)
+                assigned_user_id = user_ids[idx % len(user_ids)]
 
-            insp = Inspection(
-                inspector_id=assigned_user_id,
-                product_name=item["product"],
-                brand=item["brand"],
-                image_path=item["image"],
-                cropped_image_path=item["image"],
-                raw_ocr_text=item["ocr"],
-                extracted_data=fields,
-                compliance_score=score,
-                overall_status=status,
-                created_at=created_at,
-            )
-            db.add(insp)
-            db.commit()
-            db.refresh(insp)
-
-            for v in validations:
-                violation = Violation(
-                    inspection_id=insp.id,
-                    rule_code=v["rule_code"],
-                    description=v["description"],
-                    severity=v["severity"],
-                    status=v["status"],
+                insp = Inspection(
+                    inspector_id=assigned_user_id,
+                    product_name=item["product"],
+                    brand=item["brand"],
+                    image_path=item["image"],
+                    cropped_image_path=item["image"],
+                    raw_ocr_text=item["ocr"],
+                    extracted_data=fields,
+                    compliance_score=score,
+                    overall_status=status,
+                    created_at=created_at,
                 )
-                db.add(violation)
-            db.commit()
+                db.add(insp)
+                db.commit()
+                db.refresh(insp)
+
+                for v in validations:
+                    violation = Violation(
+                        inspection_id=insp.id,
+                        rule_code=v["rule_code"],
+                        description=v["description"],
+                        severity=v["severity"],
+                        status=v["status"],
+                    )
+                    db.add(violation)
+                db.commit()
+            except Exception as e:
+                db.rollback()
+                print(f"Error seeding product '{item['product']}': {e}")
 
         print("Successfully seeded demo inspections!")
     finally:

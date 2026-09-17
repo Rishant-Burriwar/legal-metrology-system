@@ -3,11 +3,10 @@ import os
 import cv2
 import json
 
-# Add backend directory to sys.path
-sys.path.insert(0, r"c:\Users\burri\.gemini\antigravity\scratch\legal-metrology-system\backend")
+# Add backend directory to sys.path dynamically
+backend_dir = os.path.dirname(__file__)
+sys.path.insert(0, backend_dir)
 
-from app.cv_pipeline.preprocessor import process_label_image
-from app.ocr.ocr_service import perform_adaptive_ocr_pipeline
 from app.cv_pipeline.preprocessor import process_label_image
 from app.ocr.ocr_service import perform_adaptive_ocr_pipeline
 from app.extraction.extractor import extract_compliance_fields, merge_multi_image_fields
@@ -17,10 +16,10 @@ print("=" * 60)
 print("TEST 1: inspection_101_1_orig.png (Sprite bottle front)")
 print("=" * 60)
 
-storage_dir = r"c:\Users\burri\.gemini\antigravity\scratch\legal-metrology-system\backend\storage\test_debug"
+storage_dir = os.path.join(backend_dir, "storage", "test_debug")
 os.makedirs(storage_dir, exist_ok=True)
 
-img_path_1 = r"c:\Users\burri\.gemini\antigravity\scratch\legal-metrology-system\backend\storage\images\inspection_101_1_orig.png"
+img_path_1 = os.path.join(backend_dir, "storage", "images", "inspection_101_1_orig.png")
 with open(img_path_1, "rb") as f:
     img_bytes_1 = f.read()
 
@@ -50,7 +49,7 @@ print("\n" + "=" * 60)
 print("TEST 2: inspection_101_orig.png (Vertical sweetener declaration)")
 print("=" * 60)
 
-img_path_2 = r"c:\Users\burri\.gemini\antigravity\scratch\legal-metrology-system\backend\storage\images\inspection_101_orig.png"
+img_path_2 = os.path.join(backend_dir, "storage", "images", "inspection_101_orig.png")
 with open(img_path_2, "rb") as f:
     img_bytes_2 = f.read()
 

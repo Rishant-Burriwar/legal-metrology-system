@@ -2,7 +2,11 @@ import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./legal_metrology.db")
+# Build a strict absolute path to the backend root directory to prevent "floating" databases
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_SQLITE_PATH = os.path.join(BASE_DIR, "legal_metrology.db")
+
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DEFAULT_SQLITE_PATH}")
 
 # Render/Railway postgres url fix
 if DATABASE_URL.startswith("postgres://"):
@@ -66,8 +70,8 @@ def run_migrations():
                     for col_name, col_type in v_columns:
                         if col_name not in existing_v_cols:
                             conn.execute(text(f"ALTER TABLE violations ADD COLUMN {col_name} {col_type}"))
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Migration check skipped or failed: {e}")
 
 
 # Run migrations immediately on initialization
