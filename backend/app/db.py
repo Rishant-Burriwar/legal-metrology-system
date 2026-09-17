@@ -41,10 +41,31 @@ def run_migrations():
                         ("ocr_retry_count", "INTEGER DEFAULT 0"),
                         ("quality_score", "FLOAT DEFAULT 0.0"),
                         ("quality_assessment", "JSON"),
+                        ("inspection_mode", "VARCHAR(30) DEFAULT 'multi_image'"),
+                        ("product_images", "JSON"),
+                        ("video_metadata", "JSON"),
+                        ("panorama_data", "JSON"),
+                        ("product_intelligence", "JSON"),
                     ]
                     for col_name, col_type in columns_to_add:
                         if col_name not in existing_cols:
                             conn.execute(text(f"ALTER TABLE inspections ADD COLUMN {col_name} {col_type}"))
+
+                # Check violations table
+                v_cursor = conn.execute(text("PRAGMA table_info(violations)"))
+                existing_v_cols = {row[1] for row in v_cursor.fetchall()}
+                if existing_v_cols:
+                    v_columns = [
+                        ("source_view", "VARCHAR(50)"),
+                        ("evidence_image_path", "VARCHAR(300)"),
+                        ("bounding_box", "JSON"),
+                        ("detected_value", "VARCHAR(255)"),
+                        ("expected_condition", "VARCHAR(255)"),
+                        ("confidence", "FLOAT DEFAULT 0.0"),
+                    ]
+                    for col_name, col_type in v_columns:
+                        if col_name not in existing_v_cols:
+                            conn.execute(text(f"ALTER TABLE violations ADD COLUMN {col_name} {col_type}"))
     except Exception:
         pass
 

@@ -6,6 +6,7 @@ import Upload from "./pages/Upload";
 import Report from "./pages/Report";
 import History from "./pages/History";
 import { inspectionApi } from "./api/client";
+import { RefreshCw } from "lucide-react";
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -71,7 +72,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen bg-slate-50 flex flex-col font-sans text-slate-900 bg-security-grid">
       <Navbar
         activeTab={activeTab}
         setActiveTab={(tab) => {
@@ -86,8 +87,11 @@ export default function App() {
 
       <main className="flex-1">
         {loadingInspection && (
-          <div className="flex justify-center items-center py-20">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <div className="flex flex-col justify-center items-center py-28 space-y-3">
+            <div className="p-3 bg-white rounded-2xl shadow-card border border-slate-200 flex items-center justify-center">
+              <RefreshCw className="w-6 h-6 animate-spin text-blue-600" />
+            </div>
+            <p className="text-xs font-semibold text-slate-500 font-mono">Loading statutory record details...</p>
           </div>
         )}
 
@@ -128,11 +132,21 @@ export default function App() {
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-400">
-        <p>
-          Directorate of Legal Metrology, Department of Consumer Affairs • Legal Metrology (Packaged Commodities) Rules, 2011 Compliance System
-        </p>
+      {/* Official Government Footer */}
+      <footer className="border-t border-slate-200/90 bg-white py-6 text-slate-500 mt-auto">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+          <div className="flex items-center space-x-2">
+            <div className="w-5 h-5 rounded bg-blue-600 text-white flex items-center justify-center font-bold text-[10px]">
+              LM
+            </div>
+            <span className="font-semibold text-slate-700">
+              Directorate of Legal Metrology, Department of Consumer Affairs, Government of India
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-400 font-mono text-center sm:text-right">
+            Enforcing Legal Metrology (Packaged Commodities) Rules, 2011 • Official National Portal
+          </p>
+        </div>
       </footer>
     </div>
   );

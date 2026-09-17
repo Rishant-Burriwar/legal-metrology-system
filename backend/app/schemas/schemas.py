@@ -50,6 +50,12 @@ class ViolationResponse(BaseModel):
     description: str
     severity: str
     status: str
+    source_view: Optional[str] = None
+    evidence_image_path: Optional[str] = None
+    bounding_box: Optional[Any] = None
+    detected_value: Optional[str] = None
+    expected_condition: Optional[str] = None
+    confidence: Optional[float] = 0.0
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -57,6 +63,9 @@ class ExtractedField(BaseModel):
     value: Optional[str] = None
     status: str  # found, not_found, low_confidence
     raw_snippet: Optional[str] = None
+    source_view: Optional[str] = None
+    sources: Optional[List[Dict[str, Any]]] = None
+    bounding_box: Optional[Any] = None
 
 
 class InspectionResponse(BaseModel):
@@ -75,6 +84,11 @@ class InspectionResponse(BaseModel):
     extracted_data: Optional[Dict[str, Any]] = None
     compliance_score: float
     overall_status: str
+    inspection_mode: Optional[str] = "multi_image"
+    product_images: Optional[List[Dict[str, Any]]] = None
+    video_metadata: Optional[Dict[str, Any]] = None
+    panorama_data: Optional[Dict[str, Any]] = None
+    product_intelligence: Optional[Dict[str, Any]] = None
     created_at: datetime
     violations: List[ViolationResponse] = []
     model_config = ConfigDict(from_attributes=True)
@@ -91,6 +105,8 @@ class InspectionSummary(BaseModel):
     created_at: datetime
     inspector_name: Optional[str] = None
     image_path: str
+    inspection_mode: Optional[str] = "multi_image"
+    product_images: Optional[List[Dict[str, Any]]] = None
     model_config = ConfigDict(from_attributes=True)
 
 
