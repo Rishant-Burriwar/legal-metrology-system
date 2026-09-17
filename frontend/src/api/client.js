@@ -47,7 +47,6 @@ export const authApi = {
 export const inspectionApi = {
   upload: async (formData, onProgress) => {
     const res = await api.post("/inspections/upload", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
       onUploadProgress: (progressEvent) => {
         if (onProgress && progressEvent.total) {
           const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
@@ -72,6 +71,32 @@ export const inspectionApi = {
   },
   getInspectors: async () => {
     const res = await api.get("/inspections/inspectors");
+    return res.data;
+  },
+  uploadVideo: async (formData, onProgress) => {
+    const res = await api.post("/inspections/video", formData, {
+      onUploadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(percent);
+        }
+      },
+    });
+    return res.data;
+  },
+  uploadPanorama: async (formData, onProgress) => {
+    const res = await api.post("/inspections/panorama", formData, {
+      onUploadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(percent);
+        }
+      },
+    });
+    return res.data;
+  },
+  getProductIntelligence: async (id) => {
+    const res = await api.get(`/inspections/${id}/product-intelligence`);
     return res.data;
   },
   getPdfUrl: (id) => `${API_BASE_URL}/inspections/${id}/report.pdf`,

@@ -15,15 +15,33 @@ Key improvements over previous version:
 
 import logging
 import re
+import shutil
+import warnings
 from typing import Tuple, Dict, Any, List, Optional
 import numpy as np
 import cv2
 from app.core.config import settings
 from app.extraction.disambiguation import disambiguate_text_string
 
+# Filter noisy PyTorch deprecation warnings and EasyOCR scalar overflow warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="torch")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="torch")
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="easyocr")
+
 logger = logging.getLogger(__name__)
 
 _easyocr_reader = None
+_tesseract_available: Optional[bool] = None
+
+
+def is_tesseract_available() -> bool:
+    """Check once whether the tesseract executable exists in the system PATH."""
+    global _tesseract_available
+    if _tesseract_available is None:
+        _tesseract_available = shutil.which("tesseract") is not None
+        if not _tesseract_available:
+            logger.info("Tesseract binary not found in PATH; skipping Tesseract fallback passes (using EasyOCR/Gemini).")
+    return _tesseract_available
 
 
 def get_easyocr_reader():
@@ -59,6 +77,9 @@ def try_tesseract(image: np.ndarray, psm: int = 6) -> Tuple[str, float]:
       4  = Single column of text, variable sizes
       11 = Sparse text — find as much text as possible
     """
+    if not is_tesseract_available():
+        return "", 0.0
+
     try:
         import pytesseract
 
@@ -85,7 +106,7 @@ def try_tesseract(image: np.ndarray, psm: int = 6) -> Tuple[str, float]:
 
         return text.strip(), avg_conf
     except Exception as e:
-        logger.warning(f"pytesseract fallback (PSM {psm}) failed: {e}")
+        logger.debug(f"pytesseract fallback (PSM {psm}) failed: {e}")
         return "", 0.0
 
 
@@ -107,6 +128,8 @@ _FIELD_PATTERNS: List[Tuple[str, float, re.Pattern]] = [
     ("mfr_by",      0.15, re.compile(r"\b(?:manufactured|marketed|packed|imported)\s+by\b", re.IGNORECASE)),
     ("incl_tax",    0.10, re.compile(r"incl(?:usive)?\s*(?:of\s*)?all\s*taxes", re.IGNORECASE)),
     ("country",     0.10, re.compile(r"(?:country\s*of\s*origin|made\s*in)\s*:?\s*\w+", re.IGNORECASE)),
+    ("advisory",    0.20, re.compile(r"\b(?:contains\s*(?:steviol|non-caloric|sweetener|aspartame|sucralose|caffeine)|nutritional\s*info|ingredients?)\b", re.IGNORECASE)),
+    ("brand_product", 0.15, re.compile(r"\b(?:sprite|coca[\s\-]*cola|thums\s*up|fanta|pepsi|limca|maaza|frooti|bisleri)\b", re.IGNORECASE)),
     ("india",       0.05, re.compile(r"\bIndia\b|\bBharat\b", re.IGNORECASE)),
 ]
 
@@ -156,24 +179,17 @@ def run_single_ocr_pass(
 
     if reader is not None:
         try:
-            # Parameters tuned for Indian packaging text:
-            # - mag_ratio=2.0: enlarges small text before detection
-            # - min_size=5: catches very small license number text
-            # - contrast_ths=0.05: picks up low-contrast embossed text
-            # - width_ths=0.8, height_ths=0.8: allows wider character grouping
+            # Calibrated EasyOCR parameters for product packaging:
+            # - decoder='greedy': fast, deterministic, eliminates beamsearch hallucinations
+            # - contrast_ths=0.10, adjust_contrast=0.5: ignores surface glare and reflection noise
+            # - text_threshold=0.60, low_text=0.40: avoids character fragmentation and preserves word boundaries
             results = reader.readtext(
                 image,
-                decoder="beamsearch",
-                beamWidth=10,
-                contrast_ths=0.05,
-                adjust_contrast=0.7,
-                text_threshold=0.55,
-                low_text=0.3,
-                link_threshold=0.3,
-                width_ths=0.8,
-                height_ths=0.8,
-                mag_ratio=2.0,
-                min_size=5,
+                decoder="greedy",
+                contrast_ths=0.10,
+                adjust_contrast=0.5,
+                text_threshold=0.60,
+                low_text=0.40,
             )
             text_lines = []
             confs = []
@@ -181,6 +197,13 @@ def run_single_ocr_pass(
             for bbox, text, conf in results:
                 clean_text = text.strip()
                 if not clean_text:
+                    continue
+
+                # Filter out single-character punctuation/noise
+                if len(clean_text) == 1 and not (clean_text.isdigit() or clean_text in "glLmM₹"):
+                    if conf < 0.45:
+                        continue
+                if not re.search(r"[a-zA-Z0-9₹]", clean_text):
                     continue
 
                 # Field-aware confidence boosting
@@ -413,37 +436,47 @@ def merge_ocr_consensus(
         # Field pattern density score
         field_density = score_block_by_field_patterns(text)
 
-        # Block-level confidence average
-        block_conf = (
-            sum(b.get("confidence", 0) for b in blocks) / len(blocks)
-            if blocks else conf
-        )
+        # Average confidence of valid/confident blocks (conf >= 0.35)
+        confident_blocks = [b for b in blocks if b.get("confidence", 0) >= 0.35]
+        if confident_blocks:
+            valid_block_conf = sum(b["confidence"] for b in confident_blocks) / len(confident_blocks)
+        else:
+            valid_block_conf = conf
 
-        # Composite: length matters, but field patterns boost heavily
-        return (text_len * 0.3) + (field_density * 40.0) + (block_conf * 15.0) + (conf * 10.0)
+        # Clean alphanumeric characters ratio
+        clean_chars = sum(1 for c in text if c.isalnum() or c.isspace())
+        alpha_ratio = clean_chars / max(1, text_len)
+
+        # Bonus for presence of high-confidence statutory declarations
+        statutory_bonus = 35.0 if field_density > 0.05 else 0.0
+
+        # Whole-image natural passes get priority over fragmented crops
+        pass_name = blocks[0].get("source_pass", "") if blocks else ""
+        natural_bonus = 20.0 if ("natural" in pass_name or "whole" in pass_name) else 0.0
+
+        return (field_density * 60.0) + (valid_block_conf * 40.0) + statutory_bonus + natural_bonus + (alpha_ratio * 15.0)
 
     sorted_passes = sorted(pass_results, key=pass_score, reverse=True)
     best_raw, best_conf, best_blocks = sorted_passes[0]
 
+    # Combine unique statutory and high-confidence lines from secondary/orientation passes
     if len(sorted_passes) > 1:
-        secondary_raw = sorted_passes[1][0]
-        similarity = _levenshtein_similarity(
-            best_raw.lower().strip(),
-            secondary_raw.lower().strip()
+        existing_lines = set(
+            line.strip().lower() for line in best_raw.splitlines() if line.strip()
         )
-
-        if similarity > 0.7:
-            best_conf = min(1.0, best_conf + 0.1)
-        elif similarity < 0.3 and len(secondary_raw.strip()) > 10:
-            existing_lines = set(
-                line.strip().lower() for line in best_raw.splitlines() if line.strip()
-            )
-            for line in secondary_raw.splitlines():
+        for sec_raw, _, _ in sorted_passes[1:]:
+            if not sec_raw.strip():
+                continue
+            for line in sec_raw.splitlines():
                 stripped = line.strip()
                 norm = stripped.lower()
-                if stripped and norm not in existing_lines:
-                    # Only merge if the line has field pattern content
-                    if score_block_by_field_patterns(stripped) > 0.05 or len(existing_lines) < 5:
+                if not stripped:
+                    continue
+                # Reject if this line is an inferior or distorted duplicate of an already captured line
+                is_duplicate = any(_levenshtein_similarity(norm, el) > 0.55 for el in existing_lines)
+                if not is_duplicate:
+                    # Merge if the line has statutory field content OR if primary text is sparse
+                    if score_block_by_field_patterns(stripped) > 0.05 or len(existing_lines) < 4:
                         best_raw += "\n" + stripped
                         existing_lines.add(norm)
 
@@ -472,8 +505,11 @@ def merge_ocr_consensus(
             block["confidence"] = min(1.0, block["confidence"] + 0.05 * (count - 1))
             block["cross_validated"] = True
 
-    # Final confidence as weighted average of block confidences
-    if all_blocks:
+    # Final confidence as weighted average of valid text blocks
+    confident_blocks = [b for b in all_blocks if b.get("confidence", 0) >= 0.35]
+    if confident_blocks:
+        final_conf = sum(b["confidence"] for b in confident_blocks) / len(confident_blocks)
+    elif all_blocks:
         final_conf = sum(b["confidence"] for b in all_blocks) / len(all_blocks)
     else:
         final_conf = best_conf
@@ -494,100 +530,155 @@ def perform_adaptive_ocr_pipeline(
     max_retries: int = None,
 ) -> Dict[str, Any]:
     """
-    Multi-stage adaptive retry OCR pipeline with 8 variants + region-aware OCR.
+    Multi-stage adaptive retry OCR pipeline with natural images + orientation awareness.
 
-    Stage 0: Region-aware OCR (YOLO/CRAFT region detection + per-region OCR)
-    Stage 1: Variant A (primary balanced)
-    Stage 2: Variant B (illumination) + D (binary) — if stage 1 confidence low
-    Stage 3: Variant C (2×) + E (2.5×) — if still low
-    Stage 4: Variant F (inverted) + G (top-hat) + H (super-contrast) — worst-case
-
-    Final: Consensus fusion across ALL passes.
+    Stage 1: Variant Orig / Natural BGR (primary uncompressed whole-image pass)
+    Stage 2: Orientation Evaluation (90° and 270° passes for vertical packaging text)
+    Stage 3: Label Crop Pass (variant_crop, if contour detected valid ROI)
+    Stage 4: Illumination / Contrast variants (Variant A, B, D, C, E)
+    Stage 5: Region-Aware Fallback (only if declarations are completely absent)
+    Final: Confidence-weighted consensus fusion across ALL passes.
 
     Args:
-        variants:    Dict of 8 preprocessed variants from generate_preprocessing_variants()
-        cropped_bgr: Original cropped BGR image for YOLO region detection (optional but recommended)
+        variants:    Dict of preprocessed variants from generate_preprocessing_variants()
+        cropped_bgr: Original cropped BGR image for YOLO region detection
         max_retries: Override for settings.MAX_OCR_RETRIES
     """
     retries_limit = max_retries or settings.MAX_OCR_RETRIES
     pass_results: List[Tuple[str, float, List[Dict[str, Any]]]] = []
     retry_count = 0
+    orientations_tested = ["0° (Standard)"]
 
-    # --- Stage 0: Region-aware OCR (YOLO/CRAFT sub-region detection) ---
-    if cropped_bgr is not None:
-        try:
-            region_text, region_conf, region_blocks = run_region_aware_ocr(cropped_bgr, variants)
-            if region_text.strip():
-                logger.info(f"Region-aware OCR: {len(region_blocks)} blocks, conf={region_conf:.3f}")
-                pass_results.append((region_text, region_conf, region_blocks))
-        except Exception as e:
-            logger.warning(f"Region-aware OCR stage failed: {e}")
-
-    # --- Stage 1: Variant A (primary balanced pass) ---
-    var_a = variants.get("variant_a")
-    if var_a is not None:
-        text_a, conf_a, blocks_a = run_single_ocr_pass(var_a, pass_name="variant_a")
-        pass_results.append((text_a, conf_a, blocks_a))
+    # --- Stage 1: Variant Orig (natural uncorrupted whole image pass) ---
+    var_primary = variants.get("variant_orig", variants.get("variant_a"))
+    if var_primary is not None:
+        text_a, conf_a, blocks_a = run_single_ocr_pass(var_primary, pass_name="natural_0deg")
+        if text_a.strip():
+            pass_results.append((text_a, conf_a, blocks_a))
     else:
         conf_a = 0.0
         text_a = ""
+
+    # Check image aspect ratio for vertical packaging (e.g. bottles, cylindrical cans)
+    full_img = variants.get("full_bgr", var_primary)
+    is_vertical_pkg = False
+    if full_img is not None:
+        h_f, w_f = full_img.shape[:2]
+        is_vertical_pkg = (h_f / max(1, w_f)) >= 1.15
+
+    # --- Stage 2: 4-Quadrant Orientation Evaluation (90° CW & 270° CW) ---
+    rot90 = cv2.rotate(var_primary, cv2.ROTATE_90_CLOCKWISE) if var_primary is not None else variants.get("variant_rot90")
+    if rot90 is not None and (is_vertical_pkg or conf_a < 0.65 or score_block_by_field_patterns(text_a) < 0.20):
+        logger.info("Evaluating 90° Clockwise Orientation pass for vertical packaging declarations...")
+        orientations_tested.append("90° CW")
+        text_90, conf_90, blocks_90 = run_single_ocr_pass(rot90, pass_name="natural_90deg")
+        if text_90.strip():
+            pass_results.append((text_90, conf_90, blocks_90))
+            retry_count += 1
+
+    rot270 = cv2.rotate(var_primary, cv2.ROTATE_90_COUNTERCLOCKWISE) if var_primary is not None else variants.get("variant_rot270")
+    if rot270 is not None and (conf_a < 0.40 and (len(pass_results) <= 1 or max((r[1] for r in pass_results), default=0) < 0.50)):
+        logger.info("Evaluating 270° Orientation pass...")
+        orientations_tested.append("270° CW")
+        text_270, conf_270, blocks_270 = run_single_ocr_pass(rot270, pass_name="natural_270deg")
+        if text_270.strip():
+            pass_results.append((text_270, conf_270, blocks_270))
+            retry_count += 1
+
+    # --- Stage 3: Label Crop Pass (if safe contour crop exists) ---
+    var_crop = variants.get("variant_crop")
+    if var_crop is not None and retry_count < retries_limit:
+        logger.info("Evaluating contour-cropped label variant pass...")
+        text_crop, conf_crop, blocks_crop = run_single_ocr_pass(var_crop, pass_name="variant_crop")
+        if text_crop.strip():
+            pass_results.append((text_crop, conf_crop, blocks_crop))
+            retry_count += 1
 
     # Determine if we need further stages
     best_conf_so_far = max((r[1] for r in pass_results), default=0.0)
     best_len_so_far = max((len(r[0].strip()) for r in pass_results), default=0)
 
-    # --- Stage 2: Variant B + D ---
-    if retry_count < retries_limit and (best_conf_so_far < settings.CONFIDENCE_HIGH or best_len_so_far < 50):
-        for var_key, var_name in [("variant_b", "Illumination Normalized"), ("variant_d", "Adaptive Binary")]:
-            if retry_count >= retries_limit:
-                break
-            img = variants.get(var_key)
-            if img is not None:
-                logger.info(f"Stage 2: {var_name}...")
-                t, c, b = run_single_ocr_pass(img, pass_name=var_key)
-                pass_results.append((t, c, b))
-                retry_count += 1
-
-        best_conf_so_far = max((r[1] for r in pass_results), default=0.0)
-        best_len_so_far = max((len(r[0].strip()) for r in pass_results), default=0)
-
-    # --- Stage 3: Variant C + E ---
-    if retry_count < retries_limit and (best_conf_so_far < settings.CONFIDENCE_MEDIUM or best_len_so_far < 60):
-        for var_key, var_name in [("variant_c", "2× Upscaled"), ("variant_e", "2.5× Super-res")]:
-            if retry_count >= retries_limit:
-                break
-            img = variants.get(var_key)
-            if img is not None:
-                logger.info(f"Stage 3: {var_name}...")
-                t, c, b = run_single_ocr_pass(img, pass_name=var_key)
-                pass_results.append((t, c, b))
-                retry_count += 1
-
-        best_conf_so_far = max((r[1] for r in pass_results), default=0.0)
-        best_len_so_far = max((len(r[0].strip()) for r in pass_results), default=0)
-
-    # --- Stage 4: Variant F + G + H (worst-case: dark/embossed/foil labels) ---
-    if retry_count < retries_limit and (best_conf_so_far < settings.CONFIDENCE_MEDIUM or best_len_so_far < 40):
-        for var_key, var_name in [
-            ("variant_f", "Inverted Binary"),
-            ("variant_g", "Top-Hat Transform"),
-            ("variant_h", "Super Contrast"),
-        ]:
+    # --- Stage 4: Gentle CLAHE (Variant A) + Illumination (Variant B) + Adaptive Binary (Variant D) ---
+    if retry_count < retries_limit and (best_conf_so_far < settings.CONFIDENCE_HIGH or best_len_so_far < 40):
+        for var_key, var_name in [("variant_a", "Gentle CLAHE"), ("variant_b", "Illumination Normalized"), ("variant_d", "Adaptive Binary")]:
             if retry_count >= retries_limit:
                 break
             img = variants.get(var_key)
             if img is not None:
                 logger.info(f"Stage 4: {var_name}...")
                 t, c, b = run_single_ocr_pass(img, pass_name=var_key)
-                pass_results.append((t, c, b))
+                if t.strip():
+                    pass_results.append((t, c, b))
                 retry_count += 1
+
+        best_conf_so_far = max((r[1] for r in pass_results), default=0.0)
+        best_len_so_far = max((len(r[0].strip()) for r in pass_results), default=0)
+
+    # --- Stage 5: Small Text Enhancements (Variant C 2× Bicubic) ---
+    if retry_count < retries_limit and (best_conf_so_far < settings.CONFIDENCE_MEDIUM or best_len_so_far < 40):
+        img_c = variants.get("variant_c")
+        if img_c is not None:
+            logger.info("Stage 5: 2× Upscaled bicubic pass for small print...")
+            t, c, b = run_single_ocr_pass(img_c, pass_name="variant_c_2x")
+            if t.strip():
+                pass_results.append((t, c, b))
+            retry_count += 1
+
+    # --- Stage 6: Region-Aware Fallback (only if declarations are completely absent) ---
+    crop_to_use = variants.get("cropped_bgr", cropped_bgr)
+    if crop_to_use is not None and (best_conf_so_far < 0.25 and best_len_so_far < 15):
+        try:
+            region_text, region_conf, region_blocks = run_region_aware_ocr(crop_to_use, variants)
+            if region_text.strip():
+                pass_results.append((region_text, region_conf, region_blocks))
+        except Exception:
+            pass
 
     # --- Consensus fusion ---
     raw_ocr_text, validated_ocr_text, final_conf, blocks = merge_ocr_consensus(pass_results)
 
+    # Determine best orientation from top scored pass
+    best_orientation = "0° (Standard)"
+    for b in blocks:
+        sp = b.get("source_pass", "")
+        if "90deg" in sp:
+            best_orientation = "90° Clockwise"
+            break
+        elif "270deg" in sp:
+            best_orientation = "270° Clockwise"
+            break
+
+
+    # Build OCR Diagnostics
+    detected_fields = []
+    for field_name, _, pattern in _FIELD_PATTERNS:
+        if pattern.search(raw_ocr_text) and field_name not in detected_fields:
+            detected_fields.append(field_name)
+
+    quality_rating = "High" if final_conf >= 0.70 else ("Medium" if final_conf >= 0.40 else "Low")
+    if final_conf >= 0.70:
+        recommendation = "Optimal OCR quality — high confidence statutory extraction."
+    elif final_conf >= 0.40:
+        recommendation = "Verification recommended — captured text has moderate confidence."
+    else:
+        recommendation = "Low OCR confidence — please capture a closer, well-lit image of the label."
+
+    diagnostics = {
+        "image_quality": quality_rating,
+        "text_detection_conf": round(final_conf, 3),
+        "text_recognition_conf": round(final_conf, 3),
+        "orientations_evaluated": orientations_tested,
+        "best_orientation": best_orientation,
+        "passes_executed": len(pass_results),
+        "blocks_detected": len(blocks),
+        "statutory_fields_detected": detected_fields,
+        "quality_gate_passed": final_conf >= 0.35,
+        "recommendation": recommendation,
+    }
+
     logger.info(
         f"OCR complete — passes={len(pass_results)}, retries={retry_count}, "
-        f"conf={final_conf:.3f}, text_len={len(raw_ocr_text)}"
+        f"conf={final_conf:.3f}, text_len={len(raw_ocr_text)}, orientation={best_orientation}"
     )
 
     return {
@@ -597,7 +688,9 @@ def perform_adaptive_ocr_pipeline(
         "ocr_retry_count": retry_count,
         "blocks": blocks,
         "passes_executed": len(pass_results),
+        "ocr_diagnostics": diagnostics,
     }
+
 
 
 def perform_ocr(image: np.ndarray) -> Tuple[str, float, List[Dict[str, Any]]]:

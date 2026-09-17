@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from "react";
-import { FlaskConical, Upload, Loader2, ZoomIn, ZoomOut, Eye, ChevronDown, ChevronUp, BarChart3, Layers, ImageIcon, AlertTriangle, CheckCircle2, XCircle, Sparkles, Bot } from "lucide-react";
+import { FlaskConical, Upload, Loader2, Eye, Layers, ImageIcon, AlertTriangle, CheckCircle2, XCircle, Sparkles, Bot } from "lucide-react";
 import { API_BASE_URL } from "../api/client";
 
 export default function ImageLab() {
@@ -11,7 +11,6 @@ export default function ImageLab() {
   const [activeSection, setActiveSection] = useState("stages");
   const [selectedVariant, setSelectedVariant] = useState(null);
   const [compareMode, setCompareMode] = useState(false);
-  const [expandedStage, setExpandedStage] = useState(null);
   const fileInputRef = useRef(null);
 
   const handleFileSelect = (e) => {

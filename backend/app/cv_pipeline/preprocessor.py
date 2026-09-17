@@ -84,27 +84,25 @@ def wiener_deconvolution(gray: np.ndarray, kernel_size: int = 5, noise_power: fl
     return restored
 
 
+def unsharp_mask(image: np.ndarray, sigma: float = 1.0, strength: float = 1.5) -> np.ndarray:
+    """Enhance edge sharpness for small packaging text."""
+    blurred = cv2.GaussianBlur(image, (0, 0), sigma)
+    sharpened = cv2.addWeighted(image, 1.0 + strength, blurred, -strength, 0)
+    return sharpened
+
+
 def auto_deblur(gray: np.ndarray) -> np.ndarray:
     """
-    Detect blur severity and apply Wiener deconvolution if needed.
-    Uses Laplacian variance to estimate blur level.
+    Detect blur severity and apply edge-preserving unsharp mask if needed.
+    Avoids aggressive Wiener deconvolution ringing that distorts character boundaries.
     """
     lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
     if lap_var >= settings.DEBLUR_THRESHOLD:
         return gray
 
-    if lap_var < settings.BLUR_THRESHOLD:
-        restored = wiener_deconvolution(gray, kernel_size=7, noise_power=0.005)
-    else:
-        blur_ratio = 1.0 - (lap_var / settings.DEBLUR_THRESHOLD)
-        kernel_size = max(3, min(9, int(3 + blur_ratio * 6)))
-        if kernel_size % 2 == 0:
-            kernel_size += 1
-        restored = wiener_deconvolution(gray, kernel_size=kernel_size, noise_power=0.008)
-
-    restored = unsharp_mask(restored, sigma=0.8, strength=1.0)
-    return restored
+    # Gentle unsharp mask to boost contrast of text edges without halo ringing
+    return unsharp_mask(gray, sigma=0.8, strength=1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -345,12 +343,7 @@ def detect_and_crop_label(img: np.ndarray, gray: np.ndarray) -> np.ndarray:
     if best_crop is not None:
         return best_crop
 
-    # --- Attempt 2: GrabCut foreground extraction ---
-    gc_crop = grabcut_foreground_extraction(img)
-    if gc_crop is not None:
-        return gc_crop
-
-    # --- Attempt 3: Edge-density border trim ---
+    # --- Attempt 2: Edge-density border trim fallback (fast, non-destructive) ---
     return trim_blank_borders(img, gray)
 
 
@@ -457,11 +450,6 @@ def normalize_illumination(gray: np.ndarray) -> np.ndarray:
     return norm
 
 
-def unsharp_mask(image: np.ndarray, sigma: float = 1.0, strength: float = 1.5) -> np.ndarray:
-    """Enhance edge sharpness for small packaging text."""
-    blurred = cv2.GaussianBlur(image, (0, 0), sigma)
-    sharpened = cv2.addWeighted(image, 1.0 + strength, blurred, -strength, 0)
-    return sharpened
 
 
 def super_contrast_stretch(gray: np.ndarray) -> np.ndarray:
@@ -484,48 +472,49 @@ def super_contrast_stretch(gray: np.ndarray) -> np.ndarray:
 
 def generate_preprocessing_variants(cropped_bgr: np.ndarray) -> Dict[str, np.ndarray]:
     """
-    Generate 8 preprocessed image variants for adaptive multi-pass OCR.
+    Generate controlled image variants for adaptive multi-pass OCR.
 
-    Variant A — Balanced CLAHE + Unsharp (standard labels)
-    Variant B — Illumination normalized + Bilateral + Morphological closing (shadows/glare)
-    Variant C — 2× Bicubic upscale + CLAHE + Sharpen (small text)
-    Variant D — Otsu/Adaptive binary (max text/bg separation)
-    Variant E — 2.5× upscale + Bilateral + CLAHE (micro-text)
-    Variant F — Inverted binary (embossed/debossed text on dark labels)
-    Variant G — Morphological top-hat transform (bright text, uneven illumination)
-    Variant H — Super contrast stretch + CLAHE (foil/metallic labels)
+    Variant Orig — Natural full-color BGR (ideal baseline for deep learning OCR)
+    Variant Gray — Pure grayscale without distortion
+    Variant A    — Gentle balanced CLAHE (standard packaging text)
+    Variant B    — Illumination normalized + Bilateral (shadows & surface glare)
+    Variant C    — 2× Bicubic upscale + CLAHE (small/dense statutory print)
+    Variant D    — Adaptive Gaussian binary (high contrast text/bg separation)
+    Variant E    — 2.5× Super-res upscale (micro-text FSSAI/batch lines)
+    Variant F    — Inverted binary (embossed/white-on-dark declarations)
+    Variant G    — Morphological top-hat (uneven background illumination)
+    Variant H    — Contrast stretched + CLAHE (foil and metallic surfaces)
     """
-    cropped_gray = cv2.cvtColor(cropped_bgr, cv2.COLOR_BGR2GRAY)
+    cropped_gray = cv2.cvtColor(cropped_bgr, cv2.COLOR_BGR2GRAY) if len(cropped_bgr.shape) == 3 else cropped_bgr
     h, w = cropped_gray.shape[:2]
 
-    # Base: auto-deblur on grayscale
-    deblurred_gray = auto_deblur(cropped_gray)
+    # --- Variant Orig: Natural color image ---
+    variant_orig = cropped_bgr
 
-    # --- Variant A: Balanced CLAHE + Unsharp ---
-    clahe_a = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(4, 4))
-    enhanced_a = clahe_a.apply(deblurred_gray)
-    variant_a = unsharp_mask(enhanced_a, sigma=1.0, strength=1.2)
+    # --- Variant Gray: Clean natural grayscale ---
+    variant_gray = cropped_gray
 
-    # --- Variant B: Illumination normalized + Bilateral + Morphological closing ---
-    norm_gray = normalize_illumination(deblurred_gray)
-    denoised_b = cv2.bilateralFilter(norm_gray, d=9, sigmaColor=50, sigmaSpace=50)
-    clahe_b = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
-    enhanced_b = clahe_b.apply(denoised_b)
-    close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
-    variant_b = cv2.morphologyEx(enhanced_b, cv2.MORPH_CLOSE, close_kernel)
+    # --- Variant A: Gentle Balanced CLAHE (no harsh halos) ---
+    clahe_a = cv2.createCLAHE(clipLimit=1.8, tileGridSize=(6, 6))
+    variant_a = clahe_a.apply(cropped_gray)
 
-    # --- Variant C: 2× Bicubic upscale + CLAHE + Sharpen ---
+    # --- Variant B: Illumination normalized + Bilateral ---
+    norm_gray = normalize_illumination(cropped_gray)
+    denoised_b = cv2.bilateralFilter(norm_gray, d=7, sigmaColor=35, sigmaSpace=35)
+    clahe_b = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    variant_b = clahe_b.apply(denoised_b)
+
+    # --- Variant C: 2× Bicubic upscale + CLAHE ---
     upscale_c = 2.0
     upscaled_c = cv2.resize(
-        deblurred_gray, (int(w * upscale_c), int(h * upscale_c)), interpolation=cv2.INTER_CUBIC
+        cropped_gray, (int(w * upscale_c), int(h * upscale_c)), interpolation=cv2.INTER_CUBIC
     )
-    clahe_c = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-    enhanced_c = clahe_c.apply(upscaled_c)
-    variant_c = unsharp_mask(enhanced_c, sigma=1.2, strength=1.5)
+    clahe_c = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    variant_c = clahe_c.apply(upscaled_c)
 
-    # --- Variant D: Adaptive Binary (Otsu vs Adaptive Gaussian, pick better) ---
+    # --- Variant D: Adaptive Binary (Otsu vs Adaptive Gaussian) ---
     clahe_d = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    enhanced_d = clahe_d.apply(deblurred_gray)
+    enhanced_d = clahe_d.apply(cropped_gray)
     _, otsu_binary = cv2.threshold(enhanced_d, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     adaptive_binary = cv2.adaptiveThreshold(
         enhanced_d, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, 8
@@ -536,38 +525,33 @@ def generate_preprocessing_variants(cropped_bgr: np.ndarray) -> Dict[str, np.nda
     # --- Variant E: 2.5× upscale + Bilateral + CLAHE (micro-text) ---
     upscale_e = 2.5
     upscaled_e = cv2.resize(
-        deblurred_gray, (int(w * upscale_e), int(h * upscale_e)), interpolation=cv2.INTER_CUBIC
+        cropped_gray, (int(w * upscale_e), int(h * upscale_e)), interpolation=cv2.INTER_CUBIC
     )
-    bilateral_e = cv2.bilateralFilter(upscaled_e, d=7, sigmaColor=40, sigmaSpace=40)
-    clahe_e = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(4, 4))
-    enhanced_e = clahe_e.apply(bilateral_e)
-    variant_e = unsharp_mask(enhanced_e, sigma=0.8, strength=1.0)
+    bilateral_e = cv2.bilateralFilter(upscaled_e, d=5, sigmaColor=30, sigmaSpace=30)
+    clahe_e = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(6, 6))
+    variant_e = clahe_e.apply(bilateral_e)
 
-    # --- Variant F: Inverted binary (embossed/debossed text on dark labels) ---
-    # First run adaptive threshold, then invert — recovers light-on-dark text
+    # --- Variant F: Inverted binary (white text on dark backgrounds) ---
     adaptive_f = cv2.adaptiveThreshold(
-        deblurred_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 19, 6
+        cropped_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 19, 6
     )
-    # Apply morphological opening to remove noise specks
     open_kernel_f = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 1))
     variant_f = cv2.morphologyEx(adaptive_f, cv2.MORPH_OPEN, open_kernel_f)
 
     # --- Variant G: Morphological top-hat (bright text on uneven bg) ---
-    # Top-hat = original - morphological opening
-    # This extracts bright features smaller than the structuring element
     tophat_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 7))
-    tophat = cv2.morphologyEx(deblurred_gray, cv2.MORPH_TOPHAT, tophat_kernel)
-    # Enhance and threshold the top-hat result
-    clahe_g = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(4, 4))
+    tophat = cv2.morphologyEx(cropped_gray, cv2.MORPH_TOPHAT, tophat_kernel)
+    clahe_g = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(6, 6))
     variant_g = clahe_g.apply(tophat)
 
     # --- Variant H: Super contrast stretch + CLAHE (foil/metallic labels) ---
-    stretched_h = super_contrast_stretch(deblurred_gray)
-    clahe_h = cv2.createCLAHE(clipLimit=3.5, tileGridSize=(6, 6))
-    enhanced_h = clahe_h.apply(stretched_h)
-    variant_h = unsharp_mask(enhanced_h, sigma=0.8, strength=0.8)
+    stretched_h = super_contrast_stretch(cropped_gray)
+    clahe_h = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(6, 6))
+    variant_h = clahe_h.apply(stretched_h)
 
     return {
+        "variant_orig": variant_orig,
+        "variant_gray": variant_gray,
         "variant_a": variant_a,
         "variant_b": variant_b,
         "variant_c": variant_c,
@@ -588,6 +572,7 @@ def process_label_image(
     storage_dir: str,
     inspection_id: int,
     image_index: int = 0,
+    debug_mode: bool = True,
 ) -> Tuple[str, str, np.ndarray, Dict[str, np.ndarray]]:
     """
     Complete OpenCV preprocessing pipeline for a single image:
@@ -595,15 +580,17 @@ def process_label_image(
     1. Decode & save original
     2. Conditional noise-aware denoise
     3. Deskew & perspective rectification
-    4. Label region detection & crop (contour → GrabCut → border-trim)
-    5. Generate 8 preprocessing variants (A-H) for adaptive OCR
-    6. Save cropped image to storage
+    4. Label region detection & safe non-destructive crop
+    5. Generate 8 preprocessing variants (A-H) from full straightened image
+    6. Include crop and multi-orientation variants
+    7. Save cropped image and debug variants to storage
 
     Args:
         image_bytes:    Raw image bytes from upload
         storage_dir:    Directory to write processed images
         inspection_id:  DB inspection record ID (for filenames)
         image_index:    0-based index when processing multiple images per inspection
+        debug_mode:     If True, save diagnostic variant images for visual audit
 
     Returns:
         (orig_filename, cropped_filename, enhanced_gray, variants_dict)
@@ -638,16 +625,54 @@ def process_label_image(
     else:
         straightened_bgr = original_bgr
 
-    # 4. Label region detection & crop
-    cropped_bgr = detect_and_crop_label(straightened_bgr, deskewed_gray)
+    # 4. Safe label region detection & non-destructive crop
+    h_orig, w_orig = straightened_bgr.shape[:2]
+    orig_area = h_orig * w_orig
+    raw_crop = detect_and_crop_label(straightened_bgr, deskewed_gray)
 
-    # 5. Generate 8 preprocessing variants
-    variants = generate_preprocessing_variants(cropped_bgr)
+    # Validate crop: If crop loses > 80% of area or has degenerate aspect ratio, treat it as secondary hint
+    crop_h, crop_w = raw_crop.shape[:2]
+    crop_area = crop_h * crop_w
+    is_good_crop = (0.20 * orig_area <= crop_area <= 0.95 * orig_area) and (0.15 <= (crop_w / max(1, crop_h)) <= 6.0)
+
+    cropped_bgr = raw_crop if is_good_crop else straightened_bgr
+
+    # 5. Generate variants from the FULL high-resolution image to avoid text loss!
+    variants = generate_preprocessing_variants(straightened_bgr)
     enhanced_gray = variants["variant_a"]
+
+    # Add crop variant (if good crop was found)
+    if is_good_crop and raw_crop is not None:
+        crop_gray = cv2.cvtColor(raw_crop, cv2.COLOR_BGR2GRAY) if len(raw_crop.shape) == 3 else raw_crop
+        clahe_crop = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(4, 4))
+        variants["variant_crop"] = clahe_crop.apply(crop_gray)
+
+    # Add 90° and 270° orientation candidates
+    variants["variant_rot90"] = cv2.rotate(variants["variant_a"], cv2.ROTATE_90_CLOCKWISE)
+    variants["variant_rot270"] = cv2.rotate(variants["variant_a"], cv2.ROTATE_90_COUNTERCLOCKWISE)
+    variants["full_bgr"] = straightened_bgr
+    variants["cropped_bgr"] = cropped_bgr
 
     # 6. Save cropped image
     cropped_filename = f"inspection_{inspection_id}{suffix}_crop.png"
     cropped_path = os.path.join(storage_dir, cropped_filename)
     cv2.imwrite(cropped_path, cropped_bgr)
+
+    # 7. Debug mode: Save all diagnostic images for verification (Requirement 3)
+    if debug_mode:
+        debug_dir = os.path.join(storage_dir, f"debug_{inspection_id}{suffix}")
+        os.makedirs(debug_dir, exist_ok=True)
+        try:
+            cv2.imwrite(os.path.join(debug_dir, "original.png"), original_bgr)
+            cv2.imwrite(os.path.join(debug_dir, "gray.png"), gray)
+            cv2.imwrite(os.path.join(debug_dir, "denoised.png"), denoised)
+            cv2.imwrite(os.path.join(debug_dir, "deskewed.png"), deskewed_gray)
+            cv2.imwrite(os.path.join(debug_dir, "clahe.png"), variants["variant_a"])
+            cv2.imwrite(os.path.join(debug_dir, "adaptive_threshold.png"), variants["variant_d"])
+            cv2.imwrite(os.path.join(debug_dir, "contour_crop.png"), cropped_bgr)
+            cv2.imwrite(os.path.join(debug_dir, "rotated_90.png"), variants["variant_rot90"])
+            cv2.imwrite(os.path.join(debug_dir, "rotated_270.png"), variants["variant_rot270"])
+        except Exception:
+            pass
 
     return orig_filename, cropped_filename, enhanced_gray, variants

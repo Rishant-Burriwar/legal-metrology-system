@@ -35,6 +35,11 @@ class Inspection(Base):
     extracted_data = Column(JSON, nullable=True)
     compliance_score = Column(Float, nullable=False, default=0.0)
     overall_status = Column(String(50), nullable=False, default="Pending")  # Compliant, Non-Compliant
+    inspection_mode = Column(String(30), default="multi_image", nullable=True)  # multi_image, video, panorama
+    product_images = Column(JSON, nullable=True)  # List of view records: [{"view": "front", "path": "...", "crop_path": "..."}]
+    video_metadata = Column(JSON, nullable=True)  # {"frames_captured": 100, "frames_analyzed": 12, "useful_views": 5}
+    panorama_data = Column(JSON, nullable=True)  # {"status": "success"|"fallback", "panorama_path": "..."}
+    product_intelligence = Column(JSON, nullable=True)  # {"ingredients": [...], "additives": [...], "allergens": [...]}
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     inspector = relationship("User", back_populates="inspections")
@@ -50,6 +55,12 @@ class Violation(Base):
     description = Column(Text, nullable=False)
     severity = Column(String(20), nullable=False)  # Major, Minor
     status = Column(String(20), nullable=False)    # Pass, Fail
+    source_view = Column(String(50), nullable=True)  # Front, Back, Left Side, etc.
+    evidence_image_path = Column(String(300), nullable=True)  # Path to image showing evidence
+    bounding_box = Column(JSON, nullable=True)  # [ymin, xmin, ymax, xmax] coordinates
+    detected_value = Column(String(255), nullable=True)  # Value extracted from label
+    expected_condition = Column(String(255), nullable=True)  # Rule expectation
+    confidence = Column(Float, nullable=True, default=0.0)  # Detection confidence
 
     inspection = relationship("Inspection", back_populates="violations")
 

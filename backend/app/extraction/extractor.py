@@ -359,52 +359,129 @@ def extract_compliance_fields(
     return fields
 
 
+def find_matching_bbox_for_snippet(
+    snippet: Optional[str],
+    blocks: Optional[list[Dict[str, Any]]],
+) -> Optional[list[int]]:
+    """
+    Find best matching bounding box [ymin, xmin, ymax, xmax] from OCR blocks.
+    Matches key tokens from snippet against block text.
+    """
+    if not snippet or not blocks:
+        return None
+
+    words = [w.lower() for w in re.findall(r"\w+", snippet) if len(w) >= 3]
+    if not words:
+        words = [w.lower() for w in re.findall(r"\w+", snippet)]
+    if not words:
+        return None
+
+    best_match_box = None
+    best_overlap = 0
+
+    for b in blocks:
+        b_text = b.get("text", "").lower()
+        box = b.get("box", [])
+        if not box or len(box) < 4:
+            continue
+
+        overlap = sum(1 for w in words if w in b_text)
+        if overlap > best_overlap:
+            best_overlap = overlap
+            try:
+                xs = [int(p[0]) for p in box]
+                ys = [int(p[1]) for p in box]
+                best_match_box = [min(ys), min(xs), max(ys), max(xs)]
+            except Exception:
+                pass
+
+    return best_match_box
+
+
 # Status priority order (higher index = better)
 _STATUS_PRIORITY = {
     "not_found": 0,
-    "uncertain":  1,
+    "uncertain": 1,
     "low_confidence": 2,
     "found": 3,
 }
+
+DEFAULT_VIEW_NAMES = ["Front", "Back", "Left Side", "Right Side", "Top", "Bottom", "Close-up"]
 
 
 def merge_multi_image_fields(
     all_extracted: list,
     all_ocr_confidences: list = None,
+    views: list = None,
+    image_paths: list = None,
+    all_blocks: list = None,
 ) -> Dict[str, Any]:
     """
-    Merge extracted compliance fields from multiple images of the same product.
+    Merge extracted compliance fields from multiple images of the same product with intelligent deduplication.
 
-    When a label's information is spread across multiple photos (e.g., FSSAI on
-    the back, manufacturing date on the side panel), this function picks the best
-    result for each field across all images.
-
-    Selection priority per field:
-      found > low_confidence > uncertain > not_found
-
-    When two or more images have the same status level for a field, the one from
-    the image with the higher OCR confidence is preferred.
-
-    Args:
-        all_extracted:       List of extracted_data dicts, one per image.
-        all_ocr_confidences: Optional list of per-image OCR confidence scores
-                             (same length as all_extracted).
-
-    Returns:
-        Merged dict with the best field from each image, plus merge metadata.
+    Tracks evidence sources across all package faces (Front, Back, Side, etc.).
+    If a declaration appears on multiple surfaces (e.g. MRP ₹120 on Front and Side),
+    deduplicates into a unified field while preserving all visual sources.
+    If a discrepancy is detected (e.g. conflicting MRPs), records discrepancy metadata.
     """
     if not all_extracted:
         return {}
 
+    confidences = all_ocr_confidences or [0.9] * len(all_extracted)
+    resolved_views = []
+    for i in range(len(all_extracted)):
+        if views and i < len(views) and views[i]:
+            resolved_views.append(str(views[i]).strip().title())
+        elif i < len(DEFAULT_VIEW_NAMES):
+            resolved_views.append(DEFAULT_VIEW_NAMES[i])
+        else:
+            resolved_views.append(f"Angle {i + 1}")
+
+    resolved_paths = []
+    for i in range(len(all_extracted)):
+        if image_paths and i < len(image_paths) and image_paths[i]:
+            resolved_paths.append(image_paths[i])
+        else:
+            resolved_paths.append("")
+
+    # Single-image shortcut: decorate fields with view and evidence
     if len(all_extracted) == 1:
-        result = dict(all_extracted[0])
+        result = {}
+        single_blocks = all_blocks[0] if (all_blocks and len(all_blocks) > 0) else None
+        single_path = resolved_paths[0]
+        single_view = resolved_views[0]
+
+        for k, v in all_extracted[0].items():
+            if k.startswith("_"):
+                result[k] = v
+                continue
+            if isinstance(v, dict):
+                f_dict = dict(v)
+                bbox = find_matching_bbox_for_snippet(f_dict.get("raw_snippet") or f_dict.get("value"), single_blocks)
+                f_dict["source_view"] = single_view
+                f_dict["evidence_image_path"] = single_path
+                f_dict["bounding_box"] = bbox
+                f_dict["confidence"] = round(confidences[0], 3)
+                if f_dict.get("status") in ("found", "low_confidence"):
+                    f_dict["sources"] = [{
+                        "view": single_view,
+                        "image_path": single_path,
+                        "value": f_dict.get("value"),
+                        "bounding_box": bbox,
+                        "confidence": round(confidences[0], 3),
+                    }]
+                result[k] = f_dict
+            else:
+                result[k] = v
+
         result["_merge_metadata"] = {
             "images_processed": 1,
             "merged": False,
+            "views": resolved_views,
         }
         return result
 
-    # All field keys (union across all dicts to be safe)
+    # All field keys (union across all dicts)
     all_keys = set()
     for ext in all_extracted:
         all_keys.update(k for k in ext.keys() if not k.startswith("_"))
@@ -412,44 +489,81 @@ def merge_multi_image_fields(
     merged: Dict[str, Any] = {}
     merge_log: Dict[str, Dict] = {}
 
-    confidences = all_ocr_confidences or [0.5] * len(all_extracted)
-
     for field in all_keys:
         best_result = None
         best_status_score = -1
         best_conf = -1.0
         best_image_idx = -1
+        sources_list: List[Dict[str, Any]] = []
 
         for idx, ext_data in enumerate(all_extracted):
             field_result = ext_data.get(field)
-            if field_result is None:
+            if field_result is None or not isinstance(field_result, dict):
                 continue
 
             status = field_result.get("status", "not_found")
             status_score = _STATUS_PRIORITY.get(status, 0)
             img_conf = confidences[idx] if idx < len(confidences) else 0.5
+            view_name = resolved_views[idx]
+            img_path = resolved_paths[idx]
+            img_blocks = all_blocks[idx] if (all_blocks and idx < len(all_blocks)) else None
+            bbox = find_matching_bbox_for_snippet(field_result.get("raw_snippet") or field_result.get("value"), img_blocks)
+
+            # Record source if found on this panel
+            if status in ("found", "low_confidence"):
+                sources_list.append({
+                    "view": view_name,
+                    "image_index": idx,
+                    "image_path": img_path,
+                    "value": field_result.get("value"),
+                    "status": status,
+                    "confidence": round(img_conf, 3),
+                    "bounding_box": bbox,
+                })
 
             # Higher status wins; tie-break by OCR confidence
             if (status_score > best_status_score) or (
                 status_score == best_status_score and img_conf > best_conf
             ):
-                best_result = field_result
+                best_result = dict(field_result)
                 best_status_score = status_score
                 best_conf = img_conf
                 best_image_idx = idx
 
         if best_result is not None:
+            # Decorate winning field with primary evidence + deduplicated sources
+            winning_view = resolved_views[best_image_idx] if best_image_idx >= 0 else "Front"
+            winning_path = resolved_paths[best_image_idx] if best_image_idx >= 0 else ""
+            winning_blocks = all_blocks[best_image_idx] if (all_blocks and 0 <= best_image_idx < len(all_blocks)) else None
+            winning_bbox = find_matching_bbox_for_snippet(best_result.get("raw_snippet") or best_result.get("value"), winning_blocks)
+
+            best_result["source_view"] = winning_view
+            best_result["evidence_image_path"] = winning_path
+            best_result["bounding_box"] = winning_bbox
+            best_result["confidence"] = round(best_conf, 3)
+            best_result["sources"] = sources_list if sources_list else []
+
+            # Check for value discrepancy across views
+            if len(sources_list) > 1:
+                distinct_values = set(re.sub(r"[^\w\d]", "", str(s.get("value") or "")).lower() for s in sources_list)
+                if len(distinct_values) > 1:
+                    best_result["discrepancy_detected"] = True
+                    diff_str = ", ".join(f"{s.get('view')}: {s.get('value')}" for s in sources_list)
+                    best_result["discrepancy_note"] = f"Values differ across facets: {diff_str}"
+
             merged[field] = best_result
             merge_log[field] = {
                 "source_image_index": best_image_idx,
+                "source_view": winning_view,
                 "source_status": best_result.get("status"),
                 "source_ocr_confidence": round(best_conf, 3),
+                "total_sources_count": len(sources_list),
             }
 
-    # Append merge metadata (not sent to rule engine, only for logging/response)
     merged["_merge_metadata"] = {
         "images_processed": len(all_extracted),
         "merged": True,
+        "views": resolved_views,
         "field_sources": merge_log,
     }
 
