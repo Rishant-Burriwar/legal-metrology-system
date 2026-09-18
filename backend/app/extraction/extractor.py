@@ -494,7 +494,7 @@ def merge_multi_image_fields(
         best_status_score = -1
         best_conf = -1.0
         best_image_idx = -1
-        sources_list: List[Dict[str, Any]] = []
+        sources_list: list[Dict[str, Any]] = []
 
         for idx, ext_data in enumerate(all_extracted):
             field_result = ext_data.get(field)
